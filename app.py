@@ -14,7 +14,7 @@ except Exception:
 
 
 # ==========================================================
-# RELATORÍA COINVIERTE — PROPUESTA 4 + DOBLE LOGO COINVIERTE/TEC
+# RELATORÍA COINVIERTE — PROPUESTA 4 + HEADER INSTITUCIONAL
 # ==========================================================
 
 st.set_page_config(
@@ -126,9 +126,9 @@ st.markdown(
             radial-gradient(circle at 88% 5%, rgba(255,255,255,.55), transparent 18%),
             linear-gradient(120deg, #FFFDF7 0%, #FFF9ED 48%, #EFF7F5 100%);
         border: 1px solid rgba(221,229,218,.65);
-        border-radius: 34px;
-        min-height: 185px;
-        padding: 28px 34px 24px 34px;
+        border-radius: 28px;
+        min-height: 205px;
+        padding: 34px 42px 30px 42px;
         overflow: hidden;
         box-shadow: 0 10px 28px {SHADOW};
     }}
@@ -161,7 +161,7 @@ st.markdown(
         position: relative;
         z-index: 2;
         color: {INK};
-        font-size: 2.15rem;
+        font-size: 2.45rem;
         font-weight: 850;
         line-height: 1.05;
         margin-bottom: .55rem;
@@ -193,43 +193,28 @@ st.markdown(
     .pill-sand {{ background: {SAND}; }}
     .pill-aqua {{ background: {AQUA}; }}
 
-    /* ---------- Logo ---------- */
-    .logo-panel {{
-        min-height: 185px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 14px;
-        padding: 10px 8px;
-    }}
-    .logo-box {{
-        width: 100%;
-        background: rgba(255,255,255,.72);
+    /* ---------- Franja institucional de logos ---------- */
+    .brand-strip {{
+        background: rgba(255,255,255,.94);
         border: 1px solid {BORDER};
-        border-radius: 18px;
-        padding: 14px 12px;
-        box-shadow: 0 6px 18px {SHADOW};
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        border-radius: 22px;
+        padding: 14px 24px;
+        box-shadow: 0 8px 22px {SHADOW};
+        margin-bottom: 16px;
     }}
-    .logo-box.logo-top {{
-        min-height: 86px;
+    .brand-strip-title {{
+        color: {MUTED};
+        font-size: .72rem;
+        font-weight: 750;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        margin-bottom: .35rem;
     }}
-    .logo-box.logo-bottom {{
-        min-height: 106px;
-    }}
-    .logo-panel img {{
-        width: 100%;
-        height: auto;
-        object-fit: contain;
-    }}
-    .logo-box.logo-top img {{
-        max-width: 245px;
-    }}
-    .logo-box.logo-bottom img {{
-        max-width: 220px;
+    .brand-divider {{
+        width: 1px;
+        min-height: 66px;
+        background: {BORDER};
+        margin: 0 auto;
     }}
 
     /* ---------- Tarjetas ---------- */
@@ -755,6 +740,15 @@ def info_card(icon, icon_class, label, value):
 # ==========================================================
 # Sidebar
 # ==========================================================
+st.sidebar.markdown(
+    """
+    <div style="margin-bottom:1rem;">
+        <div style="font-size:1.15rem;font-weight:850;color:#173B2E;">Relatoría</div>
+        <div style="font-size:.96rem;font-weight:700;color:#55675D;">Economía Circular Jalisco</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 st.sidebar.markdown("## Datos de la ronda")
 
 mesa = st.sidebar.selectbox("Mesa temática", MESAS)
@@ -797,91 +791,101 @@ else:
 # ==========================================================
 # Encabezado
 # ==========================================================
-logo_col, hero_col = st.columns([1.1, 4.9], gap="large")
 
-with logo_col:
-    st.markdown('<div class="logo-panel">', unsafe_allow_html=True)
+# Franja superior con las dos instituciones
+st.markdown('<div class="brand-strip">', unsafe_allow_html=True)
+b1, bd, b2, spacer = st.columns([1.35, 0.08, 1.0, 2.8], vertical_alignment="center")
 
+with b1:
     if LOGO_COINVIERTE is not None:
-        st.markdown('<div class="logo-box logo-top">', unsafe_allow_html=True)
-        st.image(str(LOGO_COINVIERTE), use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.image(str(LOGO_COINVIERTE), width=245)
     else:
         st.markdown(
-            f"""
-            <div class="logo-box logo-top" style="text-align:center; color:{MUTED};">
-                COINVIERTE
-            </div>
-            """,
+            f"<div style='color:{MUTED};font-weight:800;'>COINVIERTE</div>",
             unsafe_allow_html=True,
         )
 
+with bd:
+    st.markdown('<div class="brand-divider"></div>', unsafe_allow_html=True)
+
+with b2:
     if LOGO_TEC is not None:
-        st.markdown('<div class="logo-box logo-bottom">', unsafe_allow_html=True)
-        st.image(str(LOGO_TEC), use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.image(str(LOGO_TEC), width=180)
     else:
         st.markdown(
-            f"""
-            <div class="logo-box logo-bottom" style="text-align:center; color:{MUTED};">
-                Tecnológico de Monterrey
-            </div>
-            """,
+            f"<div style='color:{MUTED};font-weight:800;'>Tecnológico de Monterrey</div>",
             unsafe_allow_html=True,
         )
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
-with hero_col:
+with spacer:
     st.markdown(
         f"""
-        <div class="hero-shell">
-            <div class="hero-title">
-                Relatoría · Economía Circular Jalisco
-            </div>
-            <div class="hero-sub">
-                Captura ágil de hallazgos para identificar barreras,
-                oportunidades, actores habilitadores y soluciones con
-                potencial de escalamiento.
-            </div>
-            <div class="pill-row">
-                <span class="soft-pill pill-sage">🌿 {mesa}</span>
-                <span class="soft-pill pill-sand">👥 {grupo}</span>
-                <span class="soft-pill pill-aqua">🗓️ Ronda {ronda}</span>
-            </div>
+        <div style="text-align:right;color:{MUTED};font-size:.82rem;padding-top:8px;">
+            Línea Base de Economía Circular en Jalisco
         </div>
         """,
         unsafe_allow_html=True,
     )
 
+st.markdown("</div>", unsafe_allow_html=True)
+
+# Hero principal, ahora ocupa todo el ancho del contenido
+st.markdown(
+    f"""
+    <div class="hero-shell">
+        <div style="
+            display:inline-block;
+            background:{SAGE_2};
+            color:{GREEN_DARK};
+            border-radius:999px;
+            padding:.38rem .75rem;
+            font-size:.78rem;
+            font-weight:800;
+            margin-bottom:.8rem;">
+            🌿 Relatoría
+        </div>
+
+        <div class="hero-title">
+            Economía Circular Jalisco
+        </div>
+
+        <div style="
+            width:54px;
+            height:4px;
+            border-radius:99px;
+            background:{GREEN};
+            margin:.7rem 0 1rem 0;">
+        </div>
+
+        <div class="hero-sub">
+            Captura ágil de hallazgos para identificar barreras,
+            oportunidades, actores habilitadores y soluciones con
+            potencial de escalamiento.
+        </div>
+
+        <div class="pill-row">
+            <span class="soft-pill pill-sage">🌿 {mesa}</span>
+            <span class="soft-pill pill-sand">👥 {grupo}</span>
+            <span class="soft-pill pill-aqua">🗓️ Ronda {ronda}</span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.write("")
 
-# Context cards
+# Context cards compactas
 c1, c2, c3, c4 = st.columns(4)
 
 with c1:
-    info_card(
-        "👥",
-        "icon-sage",
-        "Mesa activa",
-        mesa,
-    )
+    info_card("👥", "icon-sage", "Mesa activa", mesa)
 
 with c2:
-    info_card(
-        "👤",
-        "icon-sand",
-        "Grupo actual",
-        grupo,
-    )
+    info_card("👤", "icon-sand", "Grupo actual", grupo)
 
 with c3:
-    info_card(
-        "🗓️",
-        "icon-aqua",
-        "Ronda",
-        str(ronda),
-    )
+    info_card("🗓️", "icon-aqua", "Ronda", str(ronda))
 
 with c4:
     info_card(
