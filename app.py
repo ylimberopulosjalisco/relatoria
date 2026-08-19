@@ -152,7 +152,7 @@ p {{ color:{TEXT}; }}
 .hero-sub {{ color:{MUTED};font-size:.93rem;line-height:1.5;max-width:560px; }}
 .context-strip {{
   display:grid;
-  grid-template-columns:1.55fr 1.05fr .75fr .95fr;
+  grid-template-columns:1.6fr 1.05fr .95fr;
   border-left:1px solid {BORDER};
 }}
 .ctx {{
@@ -502,13 +502,12 @@ st.sidebar.markdown("## Datos de la ronda")
 
 mesa = st.sidebar.selectbox("Mesa temática",MESAS)
 grupo = st.sidebar.selectbox("Grupo / sector",GRUPOS)
-ronda = st.sidebar.selectbox("Ronda",[1,2,3,4])
 relator = st.sidebar.text_input("Relator/a",placeholder="Nombre")
 moderador = st.sidebar.text_input("Moderador/a",placeholder="Nombre")
 
 st.sidebar.divider()
 st.sidebar.markdown(
-    '<div class="sidebar-note">👥 La mesa, moderador y relator permanecen anclados. Los grupos rotan.</div>',
+    '<div class="sidebar-note">👥 La mesa, moderador y relator permanecen anclados. El grupo / sector identifica cada participación.</div>',
     unsafe_allow_html=True,
 )
 if grupo == "Líderes gremiales":
@@ -554,10 +553,6 @@ st.markdown(
     <div class="ctx">
       <div class="ctx-icon ctx-sand">👥</div>
       <div><div class="ctx-label">GRUPO / SECTOR</div><div class="ctx-value">{grupo}</div></div>
-    </div>
-    <div class="ctx">
-      <div class="ctx-icon ctx-aqua">🗓️</div>
-      <div><div class="ctx-label">RONDA</div><div class="ctx-value">{ronda}</div></div>
     </div>
     <div class="ctx">
       <div class="ctx-icon ctx-db">🗄️</div>
@@ -618,7 +613,7 @@ with tab_captura:
                 else:
                     rec = {
                         "fecha_hora":datetime.now().isoformat(timespec="seconds"),
-                        "mesa":mesa,"grupo":grupo,"ronda":int(ronda),
+                        "mesa":mesa,"grupo":grupo,"ronda":None,
                         "relator":relator.strip(),"moderador":moderador.strip(),
                         "tipo_pregunta":"","pregunta_referencia":pregunta_referencia,
                         "hallazgo":respuesta_cierre.strip(),"barrera":"","barrera_otra":"",
@@ -674,7 +669,7 @@ with tab_captura:
 
                     rec = {
                         "fecha_hora":datetime.now().isoformat(timespec="seconds"),
-                        "mesa":mesa,"grupo":grupo,"ronda":int(ronda),
+                        "mesa":mesa,"grupo":grupo,"ronda":None,
                         "relator":relator.strip(),"moderador":moderador.strip(),
                         "tipo_pregunta":"","pregunta_referencia":pregunta_referencia,
                         "hallazgo":hallazgo_gremial.strip(),"barrera":tipo_txt,"barrera_otra":"",
@@ -737,7 +732,7 @@ with tab_captura:
                     actor_txt = " | ".join(actores_sel)
                     rec = {
                         "fecha_hora":datetime.now().isoformat(timespec="seconds"),
-                        "mesa":mesa,"grupo":grupo,"ronda":int(ronda),
+                        "mesa":mesa,"grupo":grupo,"ronda":None,
                         "relator":relator.strip(),"moderador":moderador.strip(),
                         "tipo_pregunta":"","pregunta_referencia":pregunta_referencia,
                         "hallazgo":hallazgo.strip(),"barrera":barrera_txt,
