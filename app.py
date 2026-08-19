@@ -14,7 +14,7 @@ except Exception:
 
 
 # ==========================================================
-# RELATORÍA COINVIERTE — PROPUESTA 4 + HEADER INSTITUCIONAL FIX
+# RELATORÍA COINVIERTE — PROPUESTA 4 + LOGOS AJUSTADOS A GUIDELINES
 # ==========================================================
 
 st.set_page_config(
@@ -194,15 +194,9 @@ st.markdown(
     .pill-aqua {{ background: {AQUA}; }}
 
     /* ---------- Franja institucional de logos ---------- */
-    .brand-note {{
-        color: {MUTED};
-        font-size: .82rem;
-        text-align: right;
-        padding-top: 18px;
-    }}
     .brand-separator {{
         width: 1px;
-        height: 62px;
+        height: 48px;
         background: {BORDER};
         margin: 0 auto;
     }}
@@ -785,13 +779,13 @@ else:
 # Franja superior con las dos instituciones
 with st.container(border=True):
     b1, bd, b2, spacer = st.columns(
-        [1.35, 0.10, 1.0, 2.6],
+        [1.15, 0.08, 0.95, 3.2],
         vertical_alignment="center"
     )
 
     with b1:
         if LOGO_COINVIERTE is not None:
-            st.image(str(LOGO_COINVIERTE), width=235)
+            st.image(str(LOGO_COINVIERTE), width=190)
         else:
             st.markdown(
                 f"<div style='color:{MUTED};font-weight:800;'>COINVIERTE</div>",
@@ -806,7 +800,8 @@ with st.container(border=True):
 
     with b2:
         if LOGO_TEC is not None:
-            st.image(str(LOGO_TEC), width=155)
+            # Mantener proporciones del archivo oficial sin alterar/redibujar el logotipo.
+            st.image(str(LOGO_TEC), width=120)
         else:
             st.markdown(
                 f"<div style='color:{MUTED};font-weight:800;'>Tecnológico de Monterrey</div>",
@@ -814,10 +809,7 @@ with st.container(border=True):
             )
 
     with spacer:
-        st.markdown(
-            '<div class="brand-note">Línea Base de Economía Circular en Jalisco</div>',
-            unsafe_allow_html=True,
-        )
+        st.write("")
 
 st.write("")
 
