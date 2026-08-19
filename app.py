@@ -14,7 +14,7 @@ except Exception:
 
 
 # ==========================================================
-# RELATORÍA COINVIERTE — PROPUESTA 4 + FORMULARIO ESPECIAL GREMIALES
+# RELATORÍA COINVIERTE — PROPUESTA 4 + DOBLE LOGO COINVIERTE/TEC
 # ==========================================================
 
 st.set_page_config(
@@ -197,14 +197,39 @@ st.markdown(
     .logo-panel {{
         min-height: 185px;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
-        padding: 14px;
+        gap: 14px;
+        padding: 10px 8px;
+    }}
+    .logo-box {{
+        width: 100%;
+        background: rgba(255,255,255,.72);
+        border: 1px solid {BORDER};
+        border-radius: 18px;
+        padding: 14px 12px;
+        box-shadow: 0 6px 18px {SHADOW};
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }}
+    .logo-box.logo-top {{
+        min-height: 86px;
+    }}
+    .logo-box.logo-bottom {{
+        min-height: 106px;
     }}
     .logo-panel img {{
-        max-width: 245px;
         width: 100%;
         height: auto;
+        object-fit: contain;
+    }}
+    .logo-box.logo-top img {{
+        max-width: 245px;
+    }}
+    .logo-box.logo-bottom img {{
+        max-width: 220px;
     }}
 
     /* ---------- Tarjetas ---------- */
@@ -356,14 +381,63 @@ st.markdown(
 
 BASE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = BASE_DIR / "assets"
-LOGO_PATH = ASSETS_DIR / "logo_coinvierte.png"
 
-# Si el logo no tiene exactamente ese nombre, toma la primera imagen disponible.
-if not LOGO_PATH.exists() and ASSETS_DIR.exists():
+def buscar_logo(preferidos=None, terminos=None):
+    preferidos = preferidos or []
+    terminos = terminos or []
+    if not ASSETS_DIR.exists():
+        return None
+
+    # 1) Buscar por nombres preferidos exactos
+    for nombre in preferidos:
+        p = ASSETS_DIR / nombre
+        if p.exists():
+            return p
+
+    # 2) Buscar por términos en nombre de archivo
     for candidate in sorted(ASSETS_DIR.iterdir()):
         if candidate.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
-            LOGO_PATH = candidate
-            break
+            nombre = candidate.name.lower()
+            if all(t in nombre for t in terminos):
+                return candidate
+
+    # 3) Buscar por cualquier término
+    for candidate in sorted(ASSETS_DIR.iterdir()):
+        if candidate.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+            nombre = candidate.name.lower()
+            if any(t in nombre for t in terminos):
+                return candidate
+
+    return None
+
+LOGO_COINVIERTE = buscar_logo(
+    preferidos=[
+        "logo_coinvierte.png",
+        "logo_coinvierte.jpg",
+        "logo_coinvierte.jpeg",
+        "logo_coinvierte.webp",
+    ],
+    terminos=["coinvierte"]
+)
+
+LOGO_TEC = buscar_logo(
+    preferidos=[
+        "logo_tec_monterrey.png",
+        "logo_tec_monterrey.jpg",
+        "logo_tec_monterrey.jpeg",
+        "logo_tec.png",
+        "tec_monterrey.png",
+        "tecnologico_de_monterrey.png",
+        "tecnologico_de_monterrey.jpg",
+    ],
+    terminos=["tec", "monterrey"]
+)
+
+# Fallback por si el logo del Tec sólo contiene "tec" o "tecnologico"
+if LOGO_TEC is None:
+    LOGO_TEC = buscar_logo(
+        terminos=["tecnologico"]
+    ) or buscar_logo(terminos=["tec"])
 
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
@@ -727,23 +801,35 @@ logo_col, hero_col = st.columns([1.1, 4.9], gap="large")
 
 with logo_col:
     st.markdown('<div class="logo-panel">', unsafe_allow_html=True)
-    if LOGO_PATH.exists():
-        st.image(str(LOGO_PATH), use_container_width=True)
+
+    if LOGO_COINVIERTE is not None:
+        st.markdown('<div class="logo-box logo-top">', unsafe_allow_html=True)
+        st.image(str(LOGO_COINVIERTE), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.markdown(
             f"""
-            <div style="
-                width:100%;
-                padding:22px;
-                text-align:center;
-                color:{MUTED};
-                border:1px dashed {BORDER};
-                border-radius:18px;">
+            <div class="logo-box logo-top" style="text-align:center; color:{MUTED};">
                 COINVIERTE
             </div>
             """,
             unsafe_allow_html=True,
         )
+
+    if LOGO_TEC is not None:
+        st.markdown('<div class="logo-box logo-bottom">', unsafe_allow_html=True)
+        st.image(str(LOGO_TEC), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(
+            f"""
+            <div class="logo-box logo-bottom" style="text-align:center; color:{MUTED};">
+                Tecnológico de Monterrey
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
     st.markdown("</div>", unsafe_allow_html=True)
 
 with hero_col:
