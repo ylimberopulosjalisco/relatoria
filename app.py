@@ -14,7 +14,7 @@ except Exception:
 
 
 # ==========================================================
-# RELATORÍA COINVIERTE — PROPUESTA 4 + HEADER INSTITUCIONAL
+# RELATORÍA COINVIERTE — PROPUESTA 4 + HEADER INSTITUCIONAL FIX
 # ==========================================================
 
 st.set_page_config(
@@ -194,25 +194,15 @@ st.markdown(
     .pill-aqua {{ background: {AQUA}; }}
 
     /* ---------- Franja institucional de logos ---------- */
-    .brand-strip {{
-        background: rgba(255,255,255,.94);
-        border: 1px solid {BORDER};
-        border-radius: 22px;
-        padding: 14px 24px;
-        box-shadow: 0 8px 22px {SHADOW};
-        margin-bottom: 16px;
-    }}
-    .brand-strip-title {{
+    .brand-note {{
         color: {MUTED};
-        font-size: .72rem;
-        font-weight: 750;
-        text-transform: uppercase;
-        letter-spacing: .06em;
-        margin-bottom: .35rem;
+        font-size: .82rem;
+        text-align: right;
+        padding-top: 18px;
     }}
-    .brand-divider {{
+    .brand-separator {{
         width: 1px;
-        min-height: 66px;
+        height: 62px;
         background: {BORDER};
         margin: 0 auto;
     }}
@@ -793,85 +783,58 @@ else:
 # ==========================================================
 
 # Franja superior con las dos instituciones
-st.markdown('<div class="brand-strip">', unsafe_allow_html=True)
-b1, bd, b2, spacer = st.columns([1.35, 0.08, 1.0, 2.8], vertical_alignment="center")
-
-with b1:
-    if LOGO_COINVIERTE is not None:
-        st.image(str(LOGO_COINVIERTE), width=245)
-    else:
-        st.markdown(
-            f"<div style='color:{MUTED};font-weight:800;'>COINVIERTE</div>",
-            unsafe_allow_html=True,
-        )
-
-with bd:
-    st.markdown('<div class="brand-divider"></div>', unsafe_allow_html=True)
-
-with b2:
-    if LOGO_TEC is not None:
-        st.image(str(LOGO_TEC), width=180)
-    else:
-        st.markdown(
-            f"<div style='color:{MUTED};font-weight:800;'>Tecnológico de Monterrey</div>",
-            unsafe_allow_html=True,
-        )
-
-with spacer:
-    st.markdown(
-        f"""
-        <div style="text-align:right;color:{MUTED};font-size:.82rem;padding-top:8px;">
-            Línea Base de Economía Circular en Jalisco
-        </div>
-        """,
-        unsafe_allow_html=True,
+with st.container(border=True):
+    b1, bd, b2, spacer = st.columns(
+        [1.35, 0.10, 1.0, 2.6],
+        vertical_alignment="center"
     )
 
-st.markdown("</div>", unsafe_allow_html=True)
+    with b1:
+        if LOGO_COINVIERTE is not None:
+            st.image(str(LOGO_COINVIERTE), width=235)
+        else:
+            st.markdown(
+                f"<div style='color:{MUTED};font-weight:800;'>COINVIERTE</div>",
+                unsafe_allow_html=True,
+            )
 
-# Hero principal, ahora ocupa todo el ancho del contenido
-st.markdown(
-    f"""
-    <div class="hero-shell">
-        <div style="
-            display:inline-block;
-            background:{SAGE_2};
-            color:{GREEN_DARK};
-            border-radius:999px;
-            padding:.38rem .75rem;
-            font-size:.78rem;
-            font-weight:800;
-            margin-bottom:.8rem;">
-            🌿 Relatoría
-        </div>
+    with bd:
+        st.markdown(
+            '<div class="brand-separator"></div>',
+            unsafe_allow_html=True,
+        )
 
-        <div class="hero-title">
-            Economía Circular Jalisco
-        </div>
+    with b2:
+        if LOGO_TEC is not None:
+            st.image(str(LOGO_TEC), width=155)
+        else:
+            st.markdown(
+                f"<div style='color:{MUTED};font-weight:800;'>Tecnológico de Monterrey</div>",
+                unsafe_allow_html=True,
+            )
 
-        <div style="
-            width:54px;
-            height:4px;
-            border-radius:99px;
-            background:{GREEN};
-            margin:.7rem 0 1rem 0;">
-        </div>
+    with spacer:
+        st.markdown(
+            '<div class="brand-note">Línea Base de Economía Circular en Jalisco</div>',
+            unsafe_allow_html=True,
+        )
 
-        <div class="hero-sub">
-            Captura ágil de hallazgos para identificar barreras,
-            oportunidades, actores habilitadores y soluciones con
-            potencial de escalamiento.
-        </div>
+st.write("")
 
-        <div class="pill-row">
-            <span class="soft-pill pill-sage">🌿 {mesa}</span>
-            <span class="soft-pill pill-sand">👥 {grupo}</span>
-            <span class="soft-pill pill-aqua">🗓️ Ronda {ronda}</span>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+# Hero principal
+hero_html = f"""<div class="hero-shell">
+<div style="display:inline-block;background:{SAGE_2};color:{GREEN_DARK};border-radius:999px;padding:.38rem .75rem;font-size:.78rem;font-weight:800;margin-bottom:.8rem;">🌿 Relatoría</div>
+<div class="hero-title">Economía Circular Jalisco</div>
+<div style="width:54px;height:4px;border-radius:99px;background:{GREEN};margin:.7rem 0 1rem 0;"></div>
+<div class="hero-sub">Captura ágil de hallazgos para identificar barreras, oportunidades, actores habilitadores y soluciones con potencial de escalamiento.</div>
+<div class="pill-row">
+<span class="soft-pill pill-sage">🌿 {mesa}</span>
+<span class="soft-pill pill-sand">👥 {grupo}</span>
+<span class="soft-pill pill-aqua">🗓️ Ronda {ronda}</span>
+</div>
+</div>"""
+
+st.markdown(hero_html, unsafe_allow_html=True)
 
 st.write("")
 
