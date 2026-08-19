@@ -14,7 +14,7 @@ except Exception:
 
 
 # ==========================================================
-# RELATORÍA COINVIERTE — PROPUESTA 4 + BLOQUE LÍDERES GREMIALES
+# RELATORÍA COINVIERTE — PROPUESTA 4 + FORMULARIO ESPECIAL GREMIALES
 # ==========================================================
 
 st.set_page_config(
@@ -484,6 +484,54 @@ ACTORES = [
     "Otro",
 ]
 
+
+TIPOS_HALLAZGO_GREMIAL = [
+    "Barrera sistémica",
+    "Brecha de capacidades",
+    "Regulación / trámite",
+    "Mercado / demanda",
+    "Infraestructura",
+    "Financiamiento",
+    "Tecnología / innovación",
+    "Coordinación entre actores",
+    "Oportunidad sectorial",
+    "Otro",
+]
+
+AFECTACION_GREMIAL = [
+    "PyMEs",
+    "Grandes empresas",
+    "Todo el sector",
+    "Ciertos subsectores",
+    "No se sabe",
+    "Otro",
+]
+
+ACTORES_GREMIALES = [
+    "Gobierno estatal",
+    "Gobierno municipal",
+    "Gobierno federal",
+    "Cámaras / asociaciones",
+    "Empresas",
+    "Academia",
+    "Banca / financiadores",
+    "Proveedores",
+    "Otro",
+]
+
+INSTRUMENTOS_GREMIALES = [
+    "Regulación / simplificación",
+    "Incentivo",
+    "Coinversión",
+    "Crédito / garantía",
+    "Asistencia técnica",
+    "Capacitación",
+    "Infraestructura compartida",
+    "Plataforma / coordinación",
+    "Piloto",
+    "Otro",
+]
+
 SECTORIALIDAD = [
     "No se sabe",
     "Sí, parece sectorial",
@@ -521,7 +569,8 @@ def load_data():
         "id", "fecha_hora", "mesa", "grupo", "ronda", "relator", "moderador",
         "tipo_pregunta", "pregunta_referencia",
         "hallazgo", "barrera", "barrera_otra", "ejemplo", "actor", "actor_otro",
-        "apoyo_solucion", "sectorialidad", "prioridad", "frase_clave", "notas"
+        "apoyo_solucion", "sectorialidad", "prioridad", "frase_clave", "notas",
+        "tipo_hallazgo_gremial", "afectacion_gremial", "instrumento_gremial"
     ]
 
     if supabase:
@@ -811,7 +860,7 @@ with tab_captura:
     es_cierre = pregunta_referencia.startswith("Cierre.")
 
     if es_cierre:
-        # Para el cierre: ir al grano. Sólo se captura la síntesis/respuesta.
+        # Cierre: una síntesis directa, sin clasificaciones adicionales.
         with st.form("cierre_form", clear_on_submit=True):
             respuesta_cierre = st.text_area(
                 "Respuesta / síntesis de cierre *",
@@ -851,6 +900,9 @@ with tab_captura:
                         "prioridad": "",
                         "frase_clave": "",
                         "notas": "",
+                        "tipo_hallazgo_gremial": "",
+                        "afectacion_gremial": "",
+                        "instrumento_gremial": "",
                     }
 
                     ok, msg = save_record(rec)
@@ -859,9 +911,158 @@ with tab_captura:
                     else:
                         st.error(msg)
 
+    elif grupo == "Líderes gremiales":
+        # Formulario especial: patrón sectorial + política pública.
+        st.markdown(
+            """
+            <div style="
+                background:#EEF5E8;
+                border:1px solid #DDE5DA;
+                border-radius:12px;
+                padding:10px 13px;
+                margin-bottom:12px;">
+                <b>Captura gremial:</b> registra el patrón sectorial, a quién afecta,
+                qué actores deben intervenir y qué instrumento podría destrabarlo.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        tipo_hallazgo_sel = st.multiselect(
+            "Tipo de hallazgo",
+            TIPOS_HALLAZGO_GREMIAL,
+            placeholder="Selecciona una o varias categorías",
+            key="tipo_hallazgo_gremial_live",
+        )
+
+        afectacion_sel = st.multiselect(
+            "¿A quién afecta principalmente?",
+            AFECTACION_GREMIAL,
+            placeholder="Selecciona una o varias opciones",
+            key="afectacion_gremial_live",
+        )
+
+        actores_gremiales_sel = st.multiselect(
+            "Actores que tendrían que intervenir",
+            ACTORES_GREMIALES,
+            placeholder="Selecciona uno o varios actores",
+            key="actores_gremiales_live",
+        )
+
+        instrumentos_sel = st.multiselect(
+            "Instrumento o acción que podría destrabarlo",
+            INSTRUMENTOS_GREMIALES,
+            placeholder="Selecciona una o varias opciones",
+            key="instrumentos_gremiales_live",
+        )
+
+        otro_tipo = st.text_input(
+            "Otro tipo de hallazgo",
+            placeholder="Especifica otra categoría",
+            disabled="Otro" not in tipo_hallazgo_sel,
+            key="otro_tipo_gremial_live",
+        )
+
+        otro_afectado = st.text_input(
+            "Otro grupo afectado",
+            placeholder="Especifica otro grupo o subsector",
+            disabled="Otro" not in afectacion_sel,
+            key="otro_afectado_gremial_live",
+        )
+
+        otro_actor_gremial = st.text_input(
+            "Otro actor",
+            placeholder="Especifica otro actor",
+            disabled="Otro" not in actores_gremiales_sel,
+            key="otro_actor_gremial_live",
+        )
+
+        otro_instrumento = st.text_input(
+            "Otro instrumento o acción",
+            placeholder="Especifica otro instrumento o acción",
+            disabled="Otro" not in instrumentos_sel,
+            key="otro_instrumento_gremial_live",
+        )
+
+        with st.form("hallazgo_gremial_form", clear_on_submit=True):
+            hallazgo_gremial = st.text_area(
+                "Hallazgo / patrón sectorial *",
+                placeholder="¿Qué patrón, problema u oportunidad identifica en el sector?",
+                height=105,
+            )
+
+            evidencia_gremial = st.text_area(
+                "Ejemplo o evidencia sectorial",
+                placeholder="Caso recurrente, dato, experiencia de afiliados o diferencia entre tipos de empresa.",
+                height=90,
+            )
+
+            prioridad_gremial = st.selectbox(
+                "Prioridad",
+                ["Sin clasificar", "Alta", "Media", "Baja"],
+            )
+
+            guardar_gremial = st.form_submit_button(
+                "💾 Guardar hallazgo gremial",
+                type="primary",
+                use_container_width=True,
+            )
+
+            if guardar_gremial:
+                if not hallazgo_gremial.strip():
+                    st.error("Captura el hallazgo o patrón sectorial antes de guardar.")
+                elif not relator.strip():
+                    st.error("Escribe el nombre del relator/a en la barra lateral.")
+                else:
+                    tipo_txt = " | ".join(tipo_hallazgo_sel)
+                    if "Otro" in tipo_hallazgo_sel and otro_tipo.strip():
+                        tipo_txt = f"{tipo_txt} | Otro: {otro_tipo.strip()}"
+
+                    afectacion_txt = " | ".join(afectacion_sel)
+                    if "Otro" in afectacion_sel and otro_afectado.strip():
+                        afectacion_txt = f"{afectacion_txt} | Otro: {otro_afectado.strip()}"
+
+                    actor_txt = " | ".join(actores_gremiales_sel)
+                    if "Otro" in actores_gremiales_sel and otro_actor_gremial.strip():
+                        actor_txt = f"{actor_txt} | Otro: {otro_actor_gremial.strip()}"
+
+                    instrumento_txt = " | ".join(instrumentos_sel)
+                    if "Otro" in instrumentos_sel and otro_instrumento.strip():
+                        instrumento_txt = f"{instrumento_txt} | Otro: {otro_instrumento.strip()}"
+
+                    rec = {
+                        "fecha_hora": datetime.now().isoformat(timespec="seconds"),
+                        "mesa": mesa,
+                        "grupo": grupo,
+                        "ronda": int(ronda),
+                        "relator": relator.strip(),
+                        "moderador": moderador.strip(),
+                        "tipo_pregunta": "",
+                        "pregunta_referencia": pregunta_referencia,
+                        "hallazgo": hallazgo_gremial.strip(),
+                        "barrera": tipo_txt,
+                        "barrera_otra": "",
+                        "ejemplo": evidencia_gremial.strip(),
+                        "actor": actor_txt,
+                        "actor_otro": "",
+                        "apoyo_solucion": instrumento_txt,
+                        "sectorialidad": afectacion_txt,
+                        "prioridad": prioridad_gremial,
+                        "frase_clave": "",
+                        "notas": "",
+                        "tipo_hallazgo_gremial": tipo_txt,
+                        "afectacion_gremial": afectacion_txt,
+                        "instrumento_gremial": instrumento_txt,
+                    }
+
+                    ok, msg = save_record(rec)
+                    if ok:
+                        st.success("Hallazgo gremial guardado correctamente.")
+                    else:
+                        st.error(msg)
+
     else:
-        # Estos selectores van fuera del formulario para reaccionar
-        # inmediatamente cuando se elige Otra/Otro.
+        # Formulario estándar para sectores primario, secundario y terciario.
         pre1, pre2 = st.columns(2)
 
         with pre1:
@@ -1014,6 +1215,9 @@ with tab_captura:
                         "prioridad": prioridad,
                         "frase_clave": frase.strip(),
                         "notas": notas.strip(),
+                        "tipo_hallazgo_gremial": "",
+                        "afectacion_gremial": "",
+                        "instrumento_gremial": "",
                     }
 
                     ok, msg = save_record(rec)
@@ -1025,23 +1229,24 @@ with tab_captura:
                     else:
                         st.error(msg)
 
-    st.markdown(
-        """
-        <div style="
-            margin-top:14px;
-            background:#FFF7E6;
-            border-left:4px solid #D4A33D;
-            border-radius:12px;
-            padding:11px 14px;
-            color:#5E543E;">
-            <b>Si una empresa no está haciendo nada:</b>
-            también es un hallazgo. Si surge en la conversación,
-            registra por qué no ha empezado: prioridad, conocimiento,
-            presupuesto, liderazgo, proveedores, información u otra causa.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    if grupo != "Líderes gremiales":
+        st.markdown(
+            """
+            <div style="
+                margin-top:14px;
+                background:#FFF7E6;
+                border-left:4px solid #D4A33D;
+                border-radius:12px;
+                padding:11px 14px;
+                color:#5E543E;">
+                <b>Si una empresa no está haciendo nada:</b>
+                también es un hallazgo. Si surge en la conversación,
+                registra por qué no ha empezado: prioridad, conocimiento,
+                presupuesto, liderazgo, proveedores, información u otra causa.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 # ==========================================================
@@ -1164,6 +1369,18 @@ with tab_hallazgos:
         column_config={
             "pregunta_referencia": st.column_config.TextColumn(
                 "Pregunta de referencia",
+                width="large"
+            ),
+            "tipo_hallazgo_gremial": st.column_config.TextColumn(
+                "Tipo de hallazgo gremial",
+                width="large"
+            ),
+            "afectacion_gremial": st.column_config.TextColumn(
+                "Afectación gremial",
+                width="medium"
+            ),
+            "instrumento_gremial": st.column_config.TextColumn(
+                "Instrumento / acción gremial",
                 width="large"
             ),
             "hallazgo": st.column_config.TextColumn(
