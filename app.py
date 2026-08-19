@@ -13,7 +13,7 @@ except Exception:
 
 
 # ==========================================================
-# RELATORÍA COINVIERTE — PROPUESTA 4 / TALLER-FACILITACIÓN
+# RELATORÍA COINVIERTE — PROPUESTA 4 + PREGUNTA DE REFERENCIA
 # ==========================================================
 
 st.set_page_config(
@@ -375,6 +375,84 @@ MESAS = [
     "Entorno habilitante, regulación y colaboración",
 ]
 
+TIPOS_PREGUNTA = [
+    "Pregunta detonadora",
+    "Pregunta central",
+    "Cierre",
+    "Seguimiento / repregunta",
+]
+
+PREGUNTAS_POR_MESA = {
+    "Estrategia, gobernanza y capacidades": {
+        "Pregunta detonadora": [
+            "Pensando en su organización, ¿en qué medida la economía circular ya forma parte de la manera en que toman decisiones y operan, y en qué medida sigue siendo algo incipiente?"
+        ],
+        "Pregunta central": [
+            "P1. ¿Su organización tiene hoy alguna práctica o iniciativa relacionada con economía circular, aunque sea incipiente o no la llamen así?",
+            "P2. Cuando aparece una oportunidad de circularidad, ¿quién puede realmente impulsarla o detenerla dentro de la organización?",
+            "P3. ¿Qué les hace falta dentro de la organización para poder avanzar más rápido?",
+            "P4. ¿Qué información tendría que llegar a su escritorio para que ustedes dijeran: “sí, vale la pena hacer esta inversión”?",
+        ],
+        "Cierre": [
+            "Si pudieran fortalecer una sola capacidad interna durante los próximos dos años, ¿cuál tendría mayor impacto?"
+        ],
+    },
+    "Operación circular, recursos y cadenas de valor": {
+        "Pregunta detonadora": [
+            "Si recorriéramos hoy su operación completa, ¿en qué parte encontraríamos la mayor pérdida de valor: materiales, residuos, agua, energía, empaques, inventarios o logística?"
+        ],
+        "Pregunta central": [
+            "P1. ¿Qué flujo de recursos consideran que tendría mayor potencial de mejora, aun si todavía no han iniciado acciones para atenderlo?",
+            "P2. ¿Qué les impide aprovechar ese material, reducir ese consumo o cerrar ese ciclo actualmente?",
+            "P3. ¿Identifican algún residuo o subproducto que potencialmente pudiera aprovechar otra empresa, o algún material externo que ustedes pudieran aprovechar, aunque hoy ese intercambio no exista?",
+            "P4. ¿Qué tendría que cambiar en su cadena de proveedores o clientes para que ustedes pudieran ser más circulares?",
+        ],
+        "Cierre": [
+            "¿Cuál sería la oportunidad operativa más tangible que podríamos comenzar a resolver en Jalisco?"
+        ],
+    },
+    "Innovación, tecnología, inversión y financiamiento": {
+        "Pregunta detonadora": [
+            "¿Qué problema de su empresa saben que podría resolverse con tecnología o innovación, pero todavía no han podido resolver?"
+        ],
+        "Pregunta central": [
+            "P1. ¿Qué tecnologías o soluciones conocen, han explorado o creen que podrían ser relevantes para avanzar hacia una economía más circular? Si ninguna está hoy en el radar, ¿por qué?",
+            "P2. ¿Qué hace que una solución técnicamente viable no termine implementándose?",
+            "P3. ¿Qué tendría que demostrar o resolver un proyecto para que su empresa considerara invertir recursos propios, incluso si hoy no existe disposición de inversión?",
+            "P4. ¿Qué parte del riesgo tendría que compartir alguien más para que el proyecto ocurriera?",
+            "P5. Si el gobierno quisiera ayudar a destrabar estas inversiones, ¿qué sería más útil y por qué?",
+        ],
+        "Cierre": [
+            "¿Qué inversión circular creen que hoy no está ocurriendo en Jalisco pero podría ocurrir en los próximos dos o tres años si se elimina la barrera correcta?"
+        ],
+    },
+    "Entorno habilitante, regulación y colaboración": {
+        "Pregunta detonadora": [
+            "Pensando fuera de su empresa, ¿cuál es hoy el principal obstáculo del entorno para avanzar hacia una economía circular?"
+        ],
+        "Pregunta central": [
+            "P1. ¿Hay alguna regulación, trámite o falta de claridad regulatoria que esté dificultando una solución circular?",
+            "P2. ¿Qué tendría que cambiar en el mercado para que las soluciones circulares fueran más competitivas?",
+            "P3. ¿Qué problema no puede resolver una empresa sola y requeriría colaboración entre varias organizaciones?",
+            "P4. ¿Qué debería hacer el Gobierno de Jalisco para acelerar la economía circular que hoy no está haciendo, o debería hacer de manera diferente?",
+        ],
+        "Cierre": [
+            "Si pudiéramos modificar una sola condición del ecosistema de Jalisco durante los próximos tres años, ¿cuál tendría mayor efecto?"
+        ],
+    },
+}
+
+PREGUNTAS_SEGUIMIENTO = [
+    "¿Esto que estamos escuchando es algo particular de su empresa, o creen que es común en su sector?",
+    "¿Esto cambia mucho entre una empresa grande y una pyme?",
+    "¿Tienen un ejemplo concreto que nos ayude a entender mejor el problema?",
+    "¿Qué actor podría habilitar o destrabar esta situación?",
+    "¿Qué faltó o qué no deberíamos perder antes de cerrar esta ronda?",
+]
+
+for _mesa in PREGUNTAS_POR_MESA:
+    PREGUNTAS_POR_MESA[_mesa]["Seguimiento / repregunta"] = PREGUNTAS_SEGUIMIENTO
+
 GRUPOS = [
     "Sector primario",
     "Sector secundario",
@@ -444,6 +522,7 @@ supabase = get_supabase()
 def load_data():
     cols = [
         "id", "fecha_hora", "mesa", "grupo", "ronda", "relator", "moderador",
+        "tipo_pregunta", "pregunta_referencia",
         "hallazgo", "barrera", "barrera_otra", "ejemplo", "actor", "actor_otro",
         "apoyo_solucion", "sectorialidad", "prioridad", "frase_clave", "notas"
     ]
@@ -701,6 +780,30 @@ with tab_captura:
     )
 
     with st.form("hallazgo_form", clear_on_submit=True):
+        st.markdown("### Referencia de la conversación")
+        q1, q2 = st.columns([1, 2.35])
+
+        with q1:
+            tipo_pregunta = st.selectbox(
+                "Tipo de intervención *",
+                TIPOS_PREGUNTA,
+                help="Permite distinguir detonadoras, preguntas centrales, cierre y preguntas de seguimiento."
+            )
+
+        preguntas_disponibles = PREGUNTAS_POR_MESA[mesa][tipo_pregunta]
+
+        with q2:
+            pregunta_referencia = st.selectbox(
+                "Pregunta de referencia *",
+                preguntas_disponibles,
+                help="Cada hallazgo quedará asociado a esta pregunta para facilitar la sistematización posterior."
+            )
+
+        st.caption(
+            "La pregunta se ajusta automáticamente a la mesa seleccionada. "
+            "Registra un hallazgo por cada idea sustantiva que surja alrededor de ella."
+        )
+
         hallazgo = st.text_area(
             "Problema / oportunidad *",
             placeholder=(
@@ -826,6 +929,8 @@ with tab_captura:
                     "ronda": int(ronda),
                     "relator": relator.strip(),
                     "moderador": moderador.strip(),
+                    "tipo_pregunta": tipo_pregunta,
+                    "pregunta_referencia": pregunta_referencia,
                     "hallazgo": hallazgo.strip(),
                     "barrera": barrera,
                     "barrera_otra": (
@@ -912,7 +1017,7 @@ with tab_hallazgos:
     m3.metric("Parecen sectoriales", sectoriales)
     m4.metric("Mesas con datos", mesas_con_datos)
 
-    f1, f2, f3 = st.columns(3)
+    f1, f2, f3, f4 = st.columns(4)
 
     with f1:
         filtro_mesa = st.selectbox(
@@ -929,11 +1034,33 @@ with tab_hallazgos:
         )
 
     with f3:
-        filtro_barrera = st.selectbox(
-            "Filtrar por barrera",
-            ["Todas"] + BARRERAS[1:],
-            key="f_barrera"
+        filtro_tipo = st.selectbox(
+            "Filtrar por tipo",
+            ["Todos"] + TIPOS_PREGUNTA,
+            key="f_tipo"
         )
+
+    preguntas_filtro = []
+    if filtro_mesa != "Todas":
+        for _tipo in TIPOS_PREGUNTA:
+            preguntas_filtro.extend(PREGUNTAS_POR_MESA[filtro_mesa][_tipo])
+    elif not df.empty and "pregunta_referencia" in df.columns:
+        preguntas_filtro = sorted(
+            [x for x in df["pregunta_referencia"].dropna().astype(str).unique().tolist() if x]
+        )
+
+    with f4:
+        filtro_pregunta = st.selectbox(
+            "Filtrar por pregunta",
+            ["Todas"] + preguntas_filtro,
+            key="f_pregunta"
+        )
+
+    filtro_barrera = st.selectbox(
+        "Filtrar por barrera",
+        ["Todas"] + BARRERAS[1:],
+        key="f_barrera"
+    )
 
     view = df.copy()
 
@@ -948,6 +1075,22 @@ with tab_hallazgos:
                 view["grupo"] == filtro_grupo
             ]
 
+        if (
+            filtro_tipo != "Todos"
+            and "tipo_pregunta" in view.columns
+        ):
+            view = view[
+                view["tipo_pregunta"] == filtro_tipo
+            ]
+
+        if (
+            filtro_pregunta != "Todas"
+            and "pregunta_referencia" in view.columns
+        ):
+            view = view[
+                view["pregunta_referencia"] == filtro_pregunta
+            ]
+
         if filtro_barrera != "Todas":
             view = view[
                 view["barrera"] == filtro_barrera
@@ -958,6 +1101,14 @@ with tab_hallazgos:
         use_container_width=True,
         hide_index=True,
         column_config={
+            "tipo_pregunta": st.column_config.TextColumn(
+                "Tipo",
+                width="medium"
+            ),
+            "pregunta_referencia": st.column_config.TextColumn(
+                "Pregunta de referencia",
+                width="large"
+            ),
             "hallazgo": st.column_config.TextColumn(
                 "Hallazgo",
                 width="large"
@@ -1093,6 +1244,22 @@ with tab_resumen:
             )
             st.bar_chart(
                 grp.set_index("Grupo")
+            )
+
+        st.markdown("### Hallazgos por pregunta de referencia")
+        if "pregunta_referencia" in mesa_df.columns:
+            por_pregunta = (
+                mesa_df["pregunta_referencia"]
+                .fillna("Sin referencia")
+                .replace("", "Sin referencia")
+                .value_counts()
+                .rename_axis("Pregunta")
+                .reset_index(name="Hallazgos")
+            )
+            st.dataframe(
+                por_pregunta,
+                use_container_width=True,
+                hide_index=True,
             )
 
         st.markdown("### Prioridad alta / media")
