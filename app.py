@@ -1,6 +1,9 @@
 
 import io
 import re
+import hashlib
+import textwrap
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -11,6 +14,37 @@ try:
     from supabase import create_client
 except Exception:
     create_client = None
+
+try:
+    from PIL import Image as PILImage, ImageDraw, ImageFont
+except Exception:
+    PILImage = ImageDraw = ImageFont = None
+
+try:
+    from docx import Document
+    from docx.shared import Inches, Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+except Exception:
+    Document = None
+
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        Image as RLImage, PageBreak, KeepTogether
+    )
+    from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+except Exception:
+    colors = None
 
 
 # ==========================================================
@@ -788,6 +822,568 @@ def to_excel_bytes(df):
     return out.getvalue()
 
 
+
+# ==========================================================
+# Síntesis cualitativa y exportación
+# ==========================================================
+THEME_KEYWORDS = {
+    "Financiamiento e inversión": [
+        "financ", "invers", "crédito", "credito", "garant", "costo", "presupuesto", "capital"
+    ],
+    "Capacidades y conocimiento": [
+        "capacit", "conocimiento", "talento", "personal", "habilidad", "formación", "formacion", "asistencia técnica", "asistencia tecnica"
+    ],
+    "Regulación y trámites": [
+        "regul", "norma", "trámite", "tramite", "permiso", "legal", "claridad regulatoria"
+    ],
+    "Coordinación y colaboración": [
+        "coordin", "colabor", "alianza", "vincul", "articul", "grem", "cámara", "camara", "ecosistema"
+    ],
+    "Tecnología e innovación": [
+        "tecnolog", "innov", "digital", "automat", "plataforma", "trazab", "equipo", "maquinaria"
+    ],
+    "Mercado y demanda": [
+        "mercado", "cliente", "demanda", "precio", "compet", "comercial", "venta", "comprador"
+    ],
+    "Proveedores y cadena de valor": [
+        "proveedor", "cadena", "suministro", "logíst", "logist", "insumo", "cliente"
+    ],
+    "Información y medición": [
+        "información", "informacion", "dato", "medición", "medicion", "indicador", "evidencia", "monitoreo"
+    ],
+    "Infraestructura": [
+        "infraestructura", "instalación", "instalacion", "centro", "acopio", "tratamiento", "planta"
+    ],
+    "Materiales y residuos": [
+        "residuo", "material", "subproducto", "recicl", "reuso", "reutil", "merma", "desecho", "empaque"
+    ],
+    "Agua y energía": [
+        "agua", "energ", "electric", "combustible", "renovable", "consumo"
+    ],
+}
+
+ACTION_BY_THEME = {
+    "Financiamiento e inversión": "estructurar mecanismos de coinversión, crédito o garantías que reduzcan el riesgo de implementación",
+    "Capacidades y conocimiento": "fortalecer asistencia técnica, capacitación y capacidades internas para convertir oportunidades en proyectos ejecutables",
+    "Regulación y trámites": "identificar cuellos de botella regulatorios y generar mayor claridad sobre permisos, criterios y rutas de cumplimiento",
+    "Coordinación y colaboración": "crear mecanismos de articulación entre empresas, gobierno, academia y organismos empresariales",
+    "Tecnología e innovación": "facilitar pruebas piloto, validación tecnológica y adopción de soluciones con evidencia de desempeño",
+    "Mercado y demanda": "fortalecer señales de mercado, demanda y condiciones comerciales para hacer viables las soluciones circulares",
+    "Proveedores y cadena de valor": "trabajar con proveedores y clientes para cerrar ciclos y reducir barreras a lo largo de la cadena de valor",
+    "Información y medición": "mejorar la disponibilidad de datos, métricas y evidencia para respaldar decisiones e inversiones",
+    "Infraestructura": "evaluar infraestructura compartida o especializada que permita escalar soluciones que una empresa no puede resolver por sí sola",
+    "Materiales y residuos": "priorizar flujos de materiales y residuos con potencial de valorización, intercambio o reducción",
+    "Agua y energía": "identificar proyectos de eficiencia y circularidad en agua y energía con potencial de implementación y medición",
+}
+
+
+def _clean_text(value):
+    if value is None:
+        return ""
+    s = str(value).strip()
+    if s.lower() in {"nan", "none", "nat"}:
+        return ""
+    return re.sub(r"\s+", " ", s)
+
+
+def _split_multi(value):
+    s = _clean_text(value)
+    if not s:
+        return []
+    parts = re.split(r"\s*\|\s*|\s*;\s*", s)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _top_values(df, column, n=5):
+    if df.empty or column not in df.columns:
+        return []
+    c = Counter()
+    for v in df[column].tolist():
+        for part in _split_multi(v):
+            if part.lower() not in {"sin clasificar", "no se sabe", "ninguno", "ninguna"}:
+                c[part] += 1
+    return c.most_common(n)
+
+
+def _row_text(row):
+    fields = [
+        "hallazgo", "barrera", "barrera_otra", "ejemplo", "actor", "actor_otro",
+        "apoyo_solucion", "frase_clave", "notas", "tipo_hallazgo_gremial",
+        "afectacion_gremial", "instrumento_gremial"
+    ]
+    return " ".join(_clean_text(row.get(c, "")) for c in fields).lower()
+
+
+def _theme_stats(df):
+    stats = []
+    if df.empty:
+        return stats
+    for theme, keywords in THEME_KEYWORDS.items():
+        rows = []
+        for idx, row in df.iterrows():
+            txt = _row_text(row)
+            if any(k.lower() in txt for k in keywords):
+                rows.append(idx)
+        if not rows:
+            continue
+        sub = df.loc[rows]
+        groups = int(sub["grupo"].dropna().astype(str).nunique()) if "grupo" in sub.columns else 0
+        mesas = int(sub["mesa"].dropna().astype(str).nunique()) if "mesa" in sub.columns else 0
+        stats.append({"tema": theme, "menciones": len(rows), "grupos": groups, "mesas": mesas})
+    return sorted(stats, key=lambda x: (x["menciones"], x["grupos"], x["mesas"]), reverse=True)
+
+
+def _join_items(items):
+    items = [str(x) for x in items if x]
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} y {items[1]}"
+    return ", ".join(items[:-1]) + f" y {items[-1]}"
+
+
+def _scope_signature(df, scope):
+    if df.empty:
+        raw = scope + "|empty"
+    else:
+        ids = df["id"].astype(str).tolist() if "id" in df.columns else [str(i) for i in df.index]
+        raw = scope + "|" + "|".join(ids)
+        if "created_at" in df.columns:
+            raw += "|" + "|".join(df["created_at"].fillna("").astype(str).tolist())
+        elif "fecha_hora" in df.columns:
+            raw += "|" + "|".join(df["fecha_hora"].fillna("").astype(str).tolist())
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()[:10]
+
+
+def _sintesis_corta(df, label):
+    if df.empty:
+        return f"{label}: sin registros suficientes para elaborar una síntesis."
+    themes = _theme_stats(df)[:3]
+    barriers = _top_values(df, "barrera", 3)
+    supports = _top_values(df, "apoyo_solucion", 2)
+    groups = int(df["grupo"].dropna().astype(str).nunique()) if "grupo" in df.columns else 0
+    parts = [f"La mesa reunió {len(df)} hallazgos provenientes de {groups} grupo{'s' if groups != 1 else ''}."]
+    if themes:
+        parts.append(f"Los temas con mayor recurrencia fueron {_join_items([t['tema'].lower() for t in themes])}.")
+    if barriers:
+        parts.append(f"Las barreras más señaladas se concentraron en {_join_items([b[0].lower() for b in barriers])}.")
+    if supports:
+        parts.append(f"Como condiciones de avance aparecen {_join_items([s[0].lower() for s in supports])}.")
+    return " ".join(parts)
+
+
+def analizar_sesion(df, scope_label="Sesión completa"):
+    data = df.copy()
+    total = len(data)
+    groups = int(data["grupo"].dropna().astype(str).nunique()) if not data.empty and "grupo" in data.columns else 0
+    mesas = int(data["mesa"].dropna().astype(str).nunique()) if not data.empty and "mesa" in data.columns else 0
+    high = int((data["prioridad"].fillna("").astype(str) == "Alta").sum()) if not data.empty and "prioridad" in data.columns else 0
+    sectorial = int((data["sectorialidad"].fillna("").astype(str) == "Sí, parece sectorial").sum()) if not data.empty and "sectorialidad" in data.columns else 0
+
+    themes = _theme_stats(data)
+    barriers = _top_values(data, "barrera", 6)
+    supports = _top_values(data, "apoyo_solucion", 6)
+    actors = _top_values(data, "actor", 6)
+
+    executive = []
+    executive.append(
+        f"Se analizaron {total} hallazgos de {groups} grupo{'s' if groups != 1 else ''}"
+        + (f" distribuidos en {mesas} mesas temáticas." if scope_label == "Sesión completa" else ".")
+    )
+    if themes:
+        top = themes[:3]
+        executive.append(
+            "La conversación se concentró principalmente en "
+            + _join_items([t["tema"].lower() for t in top])
+            + "."
+        )
+        trans = [t for t in top if t["grupos"] >= 2 or t["mesas"] >= 2]
+        if trans:
+            executive.append(
+                "La presencia de estos temas en distintos grupos"
+                + (" y mesas" if scope_label == "Sesión completa" else "")
+                + " sugiere que varios retos son transversales y no únicamente casos aislados de una empresa."
+            )
+    if barriers:
+        executive.append(
+            "Las barreras con mayor recurrencia fueron "
+            + _join_items([x[0].lower() for x in barriers[:3]])
+            + "."
+        )
+    if supports:
+        executive.append(
+            "Entre las condiciones o apoyos señalados para avanzar destacan "
+            + _join_items([x[0].lower() for x in supports[:3]])
+            + "."
+        )
+    if high or sectorial:
+        executive.append(
+            f"Se identificaron {high} hallazgos de prioridad alta y {sectorial} hallazgos marcados como potencialmente sectoriales, que conviene revisar primero en la etapa de priorización."
+        )
+
+    priority_df = data
+    if not data.empty and "prioridad" in data.columns:
+        p = data[data["prioridad"].fillna("").astype(str).isin(["Alta", "Media"])]
+        if not p.empty:
+            priority_df = p
+    priority_themes = _theme_stats(priority_df)[:4]
+    priorities = []
+    for t in priority_themes:
+        action = ACTION_BY_THEME.get(t["tema"])
+        if action:
+            priorities.append(f"{t['tema']}: {action}.")
+    if not priorities and supports:
+        priorities = [f"Profundizar en {x[0].lower()} como posible línea de intervención." for x in supports[:4]]
+
+    mesa_summaries = []
+    if not data.empty and "mesa" in data.columns:
+        for m in MESAS:
+            md = data[data["mesa"] == m]
+            if not md.empty:
+                mesa_summaries.append((m, _sintesis_corta(md, m)))
+
+    return {
+        "scope": scope_label,
+        "total": total,
+        "groups": groups,
+        "mesas": mesas,
+        "high": high,
+        "sectorial": sectorial,
+        "themes": themes,
+        "barriers": barriers,
+        "supports": supports,
+        "actors": actors,
+        "executive": " ".join(executive),
+        "priorities": priorities,
+        "mesa_summaries": mesa_summaries,
+    }
+
+
+def _find_montserrat():
+    candidates = [
+        ASSETS_DIR / "Montserrat-Regular.ttf",
+        ASSETS_DIR / "Montserrat.ttf",
+        Path("/usr/share/fonts/truetype/montserrat/Montserrat-Regular.ttf"),
+        Path("/usr/local/share/fonts/Montserrat-Regular.ttf"),
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
+def _pil_font(size=28, bold=False):
+    if ImageFont is None:
+        return None
+    candidates = []
+    if bold:
+        candidates += [ASSETS_DIR / "Montserrat-SemiBold.ttf", ASSETS_DIR / "Montserrat-Bold.ttf"]
+    candidates += [ASSETS_DIR / "Montserrat-Regular.ttf", Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")]
+    for p in candidates:
+        if p.exists():
+            try:
+                return ImageFont.truetype(str(p), size=size)
+            except Exception:
+                pass
+    return ImageFont.load_default()
+
+
+def crear_grafica_barras(items, titulo, max_items=6):
+    if PILImage is None or not items:
+        return None
+    vals = [(str(k), int(v)) for k, v in items[:max_items] if int(v) > 0]
+    if not vals:
+        return None
+    W = 1500
+    left = 420
+    right = 120
+    top = 140
+    row_h = 86
+    H = top + row_h * len(vals) + 80
+    img = PILImage.new("RGB", (W, H), "white")
+    draw = ImageDraw.Draw(img)
+    font_title = _pil_font(36, bold=True)
+    font_label = _pil_font(25)
+    font_num = _pil_font(24, bold=True)
+    draw.text((40, 35), titulo, fill=(23, 59, 46), font=font_title)
+    maxv = max(v for _, v in vals)
+    for i, (label, value) in enumerate(vals):
+        y = top + i * row_h
+        wrapped = textwrap.wrap(label, width=33)[:2]
+        draw.multiline_text((40, y + 5), "\n".join(wrapped), fill=(45, 60, 51), font=font_label, spacing=3)
+        x0 = left
+        x1 = left + int((W - left - right) * (value / maxv))
+        draw.rounded_rectangle((x0, y + 10, x1, y + 54), radius=18, fill=(47, 110, 74))
+        draw.text((x1 + 14, y + 17), str(value), fill=(23, 59, 46), font=font_num)
+    bio = io.BytesIO()
+    img.save(bio, format="PNG")
+    return bio.getvalue()
+
+
+def _set_docx_montserrat(doc):
+    for style_name in ["Normal", "Title", "Heading 1", "Heading 2", "Heading 3"]:
+        try:
+            style = doc.styles[style_name]
+            style.font.name = "Montserrat"
+            rpr = style.element.get_or_add_rPr()
+            rfonts = rpr.rFonts
+            if rfonts is None:
+                rfonts = OxmlElement("w:rFonts")
+                rpr.insert(0, rfonts)
+            for attr in ["ascii", "hAnsi", "eastAsia", "cs"]:
+                rfonts.set(qn(f"w:{attr}"), "Montserrat")
+        except Exception:
+            pass
+
+
+def _add_page_field(paragraph):
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    run = paragraph.add_run("Página ")
+    fld = OxmlElement("w:fldSimple")
+    fld.set(qn("w:instr"), "PAGE")
+    run._r.addnext(fld)
+    run2 = paragraph.add_run(" de ")
+    fld2 = OxmlElement("w:fldSimple")
+    fld2.set(qn("w:instr"), "NUMPAGES")
+    run2._r.addnext(fld2)
+
+
+def _docx_add_logo_row(doc):
+    table = doc.add_table(rows=1, cols=2)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = False
+    table.columns[0].width = Inches(3.3)
+    table.columns[1].width = Inches(3.3)
+    c1, c2 = table.rows[0].cells
+    c1.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    c2.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    p1 = c1.paragraphs[0]
+    p2 = c2.paragraphs[0]
+    p2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    if LOGO_COINVIERTE and Path(LOGO_COINVIERTE).exists():
+        p1.add_run().add_picture(str(LOGO_COINVIERTE), width=Inches(1.85))
+    else:
+        p1.add_run("COINVIERTE").bold = True
+    if LOGO_TEC and Path(LOGO_TEC).exists():
+        p2.add_run().add_picture(str(LOGO_TEC), width=Inches(1.3))
+    else:
+        p2.add_run("Tecnológico de Monterrey").bold = True
+    for cell in [c1, c2]:
+        tcPr = cell._tc.get_or_add_tcPr()
+        borders = OxmlElement("w:tcBorders")
+        for edge in ["top", "left", "bottom", "right", "insideH", "insideV"]:
+            tag = OxmlElement(f"w:{edge}")
+            tag.set(qn("w:val"), "nil")
+            borders.append(tag)
+        tcPr.append(borders)
+
+
+def generar_docx_sintesis(analysis, executive_text, priorities_text, chart_theme=None, chart_barrier=None):
+    if Document is None:
+        return None
+    doc = Document()
+    sec = doc.sections[0]
+    sec.top_margin = Inches(0.55)
+    sec.bottom_margin = Inches(0.55)
+    sec.left_margin = Inches(0.7)
+    sec.right_margin = Inches(0.7)
+    _set_docx_montserrat(doc)
+
+    normal = doc.styles["Normal"]
+    normal.font.size = Pt(9.5)
+    doc.styles["Title"].font.size = Pt(20)
+    doc.styles["Heading 1"].font.size = Pt(14)
+    doc.styles["Heading 2"].font.size = Pt(11.5)
+
+    _docx_add_logo_row(doc)
+    p = doc.add_paragraph()
+    p.style = doc.styles["Title"]
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    r = p.add_run("Síntesis de sesión")
+    r.font.color.rgb = RGBColor(23, 59, 46)
+    p2 = doc.add_paragraph("Diagnóstico de Economía Circular para el Estado de Jalisco")
+    p2.runs[0].bold = True
+    p2.runs[0].font.size = Pt(11)
+    p2.runs[0].font.color.rgb = RGBColor(47, 110, 74)
+    meta = doc.add_paragraph(f"Alcance: {analysis['scope']}  |  Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    meta.runs[0].font.size = Pt(8.5)
+    meta.runs[0].font.color.rgb = RGBColor(110, 123, 115)
+
+    doc.add_heading("Lectura ejecutiva", level=1)
+    for para in [x.strip() for x in re.split(r"(?<=[.!?])\s+", executive_text) if x.strip()]:
+        doc.add_paragraph(para)
+
+    doc.add_heading("Patrones principales", level=1)
+    for t in analysis["themes"][:6]:
+        p = doc.add_paragraph(style="List Bullet")
+        p.add_run(f"{t['tema']}. ").bold = True
+        alcance = f"{t['menciones']} menciones; presente en {t['grupos']} grupo{'s' if t['grupos'] != 1 else ''}"
+        if analysis["scope"] == "Sesión completa":
+            alcance += f" y {t['mesas']} mesa{'s' if t['mesas'] != 1 else ''}"
+        p.add_run(alcance + ".")
+
+    if analysis["barriers"]:
+        doc.add_heading("Barreras recurrentes", level=1)
+        for name, n in analysis["barriers"][:6]:
+            doc.add_paragraph(f"{name}: {n} menciones.", style="List Bullet")
+
+    if analysis["supports"]:
+        doc.add_heading("Condiciones y apoyos señalados", level=1)
+        for name, n in analysis["supports"][:6]:
+            doc.add_paragraph(f"{name}: {n} menciones.", style="List Bullet")
+
+    if analysis["actors"]:
+        doc.add_heading("Actores habilitadores mencionados", level=1)
+        doc.add_paragraph(_join_items([x[0] for x in analysis["actors"][:6]]) + ".")
+
+    if analysis["mesa_summaries"] and analysis["scope"] == "Sesión completa":
+        doc.add_heading("Lectura por mesa", level=1)
+        for mesa_name, synth in analysis["mesa_summaries"]:
+            doc.add_heading(mesa_name, level=2)
+            doc.add_paragraph(synth)
+
+    doc.add_heading("Prioridades para seguimiento", level=1)
+    for line in [x.strip(" •-\t") for x in priorities_text.splitlines() if x.strip()]:
+        doc.add_paragraph(line, style="List Bullet")
+
+    if chart_theme or chart_barrier:
+        doc.add_heading("Gráficas de apoyo", level=1)
+        if chart_theme:
+            doc.add_picture(io.BytesIO(chart_theme), width=Inches(6.7))
+        if chart_barrier:
+            doc.add_picture(io.BytesIO(chart_barrier), width=Inches(6.7))
+
+    doc.add_heading("Nota metodológica", level=1)
+    doc.add_paragraph(
+        "Esta síntesis agrupa y analiza los registros capturados durante la sesión. No reproduce una transcripción literal. "
+        "Las frecuencias representan menciones registradas y sirven para identificar recurrencias, no para estimar proporciones de participantes."
+    )
+
+    footer = sec.footer
+    fp = footer.paragraphs[0]
+    fp.text = "COINVIERTE · Diagnóstico de Economía Circular Jalisco"
+    fp.runs[0].font.name = "Montserrat"
+    fp.runs[0].font.size = Pt(7.5)
+    _add_page_field(footer.add_paragraph())
+
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+
+class _NumberedCanvas(rl_canvas.Canvas if colors is not None else object):
+    def __init__(self, *args, **kwargs):
+        if colors is None:
+            return
+        rl_canvas.Canvas.__init__(self, *args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        page_count = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self._draw_page_number(page_count)
+            rl_canvas.Canvas.showPage(self)
+        rl_canvas.Canvas.save(self)
+
+    def _draw_page_number(self, page_count):
+        self.saveState()
+        self.setFont("Helvetica", 7.5)
+        self.setFillColorRGB(0.43, 0.48, 0.45)
+        self.drawRightString(letter[0] - 17 * mm, 10 * mm, f"Página {self._pageNumber} de {page_count}")
+        self.drawString(17 * mm, 10 * mm, "COINVIERTE · Diagnóstico de Economía Circular Jalisco")
+        self.restoreState()
+
+
+def _register_pdf_font():
+    regular = _find_montserrat()
+    if regular is not None and colors is not None:
+        try:
+            pdfmetrics.registerFont(TTFont("Montserrat", str(regular)))
+            return "Montserrat"
+        except Exception:
+            pass
+    return "Helvetica"
+
+
+def generar_pdf_sintesis(analysis, executive_text, priorities_text, chart_theme=None, chart_barrier=None):
+    if colors is None:
+        return None
+    out = io.BytesIO()
+    font = _register_pdf_font()
+    styles = getSampleStyleSheet()
+    title = ParagraphStyle("TitleEC", parent=styles["Title"], fontName=font, fontSize=19, leading=23, textColor=colors.HexColor("#173B2E"), spaceAfter=4)
+    subtitle = ParagraphStyle("SubtitleEC", parent=styles["Normal"], fontName=font, fontSize=10.5, leading=14, textColor=colors.HexColor("#2F6E4A"), spaceAfter=10)
+    h1 = ParagraphStyle("H1EC", parent=styles["Heading1"], fontName=font, fontSize=13, leading=16, textColor=colors.HexColor("#173B2E"), spaceBefore=9, spaceAfter=5)
+    h2 = ParagraphStyle("H2EC", parent=styles["Heading2"], fontName=font, fontSize=10.5, leading=13, textColor=colors.HexColor("#285843"), spaceBefore=7, spaceAfter=3)
+    body = ParagraphStyle("BodyEC", parent=styles["BodyText"], fontName=font, fontSize=9.2, leading=13.2, textColor=colors.HexColor("#2D3C33"), spaceAfter=5)
+    bullet = ParagraphStyle("BulletEC", parent=body, leftIndent=12, firstLineIndent=-7, bulletIndent=3, spaceAfter=3)
+    meta = ParagraphStyle("MetaEC", parent=body, fontSize=8, textColor=colors.HexColor("#6E7B73"), spaceAfter=8)
+
+    doc = SimpleDocTemplate(out, pagesize=letter, rightMargin=17*mm, leftMargin=17*mm, topMargin=16*mm, bottomMargin=18*mm, title="Síntesis de sesión - Economía Circular Jalisco")
+    story = []
+
+    logo_cells = []
+    if LOGO_COINVIERTE and Path(LOGO_COINVIERTE).exists():
+        logo_cells.append(RLImage(str(LOGO_COINVIERTE), width=42*mm, height=15*mm, kind="proportional"))
+    else:
+        logo_cells.append(Paragraph("<b>COINVIERTE</b>", body))
+    if LOGO_TEC and Path(LOGO_TEC).exists():
+        logo_cells.append(RLImage(str(LOGO_TEC), width=31*mm, height=13*mm, kind="proportional"))
+    else:
+        logo_cells.append(Paragraph("<b>Tecnológico de Monterrey</b>", body))
+    lt = Table([logo_cells], colWidths=[85*mm, 85*mm])
+    lt.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,0), (1,0), "RIGHT"), ("BOTTOMPADDING", (0,0), (-1,-1), 6)]))
+    story += [lt, Paragraph("Síntesis de sesión", title), Paragraph("Diagnóstico de Economía Circular para el Estado de Jalisco", subtitle), Paragraph(f"Alcance: {analysis['scope']} &nbsp;&nbsp;|&nbsp;&nbsp; Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", meta)]
+
+    story += [Paragraph("Lectura ejecutiva", h1), Paragraph(executive_text.replace("&", "&amp;"), body)]
+    story.append(Paragraph("Patrones principales", h1))
+    for t in analysis["themes"][:6]:
+        alcance = f"{t['menciones']} menciones; presente en {t['grupos']} grupo{'s' if t['grupos'] != 1 else ''}"
+        if analysis["scope"] == "Sesión completa":
+            alcance += f" y {t['mesas']} mesa{'s' if t['mesas'] != 1 else ''}"
+        story.append(Paragraph(f"• <b>{t['tema']}.</b> {alcance}.", bullet))
+
+    if analysis["barriers"]:
+        story.append(Paragraph("Barreras recurrentes", h1))
+        for name, n in analysis["barriers"][:6]:
+            story.append(Paragraph(f"• <b>{name}:</b> {n} menciones.", bullet))
+    if analysis["supports"]:
+        story.append(Paragraph("Condiciones y apoyos señalados", h1))
+        for name, n in analysis["supports"][:6]:
+            story.append(Paragraph(f"• <b>{name}:</b> {n} menciones.", bullet))
+    if analysis["actors"]:
+        story += [Paragraph("Actores habilitadores mencionados", h1), Paragraph((_join_items([x[0] for x in analysis["actors"][:6]]) + ".").replace("&", "&amp;"), body)]
+
+    if analysis["mesa_summaries"] and analysis["scope"] == "Sesión completa":
+        story.append(Paragraph("Lectura por mesa", h1))
+        for mesa_name, synth in analysis["mesa_summaries"]:
+            story += [Paragraph(mesa_name.replace("&", "&amp;"), h2), Paragraph(synth.replace("&", "&amp;"), body)]
+
+    story.append(Paragraph("Prioridades para seguimiento", h1))
+    for line in [x.strip(" •-\t") for x in priorities_text.splitlines() if x.strip()]:
+        story.append(Paragraph("• " + line.replace("&", "&amp;"), bullet))
+
+    if chart_theme or chart_barrier:
+        story.append(Paragraph("Gráficas de apoyo", h1))
+        if chart_theme:
+            story += [RLImage(io.BytesIO(chart_theme), width=175*mm, height=70*mm, kind="proportional"), Spacer(1, 4*mm)]
+        if chart_barrier:
+            story += [RLImage(io.BytesIO(chart_barrier), width=175*mm, height=70*mm, kind="proportional"), Spacer(1, 4*mm)]
+
+    story += [Paragraph("Nota metodológica", h1), Paragraph(
+        "Esta síntesis agrupa y analiza los registros capturados durante la sesión. No reproduce una transcripción literal. "
+        "Las frecuencias representan menciones registradas y sirven para identificar recurrencias, no para estimar proporciones de participantes.", body)]
+
+    doc.build(story, canvasmaker=_NumberedCanvas)
+    return out.getvalue()
+
 def info_card(icon, icon_class, label, value):
     st.markdown(
         f"""
@@ -980,7 +1576,7 @@ with c4:
 # Tabs
 # ==========================================================
 tab_captura, tab_hallazgos, tab_resumen = st.tabs(
-    ["✎ Captura", "☷ Hallazgos", "▥ Resumen de mesa"]
+    ["✎ Captura", "☷ Hallazgos", "▥ Síntesis"]
 )
 
 
@@ -1457,8 +2053,8 @@ with tab_hallazgos:
 
     m1.metric("Registros", total)
     m2.metric("Prioridad alta", altas)
-    m3.metric("Parecen sectoriales", sectoriales)
-    m4.metric("Mesas con datos", mesas_con_datos)
+    m3.metric("Hallazgos sectoriales", sectoriales)
+    m4.metric("Mesas con hallazgos", mesas_con_datos)
 
     f1, f2, f3, f4 = st.columns(4)
 
@@ -1616,154 +2212,194 @@ with tab_hallazgos:
 
 
 # ==========================================================
-# Resumen
+# Síntesis
 # ==========================================================
 with tab_resumen:
     df = load_data()
 
-    st.markdown("## Resumen de mesa")
-    mesa_resumen = st.selectbox(
-        "Mesa a consultar",
-        MESAS,
-        key="mesa_resumen",
-        help="Puedes elegir directamente una mesa. Si la filtraste antes en Hallazgos, se conserva esa selección.",
-    )
-    st.caption(f"Mostrando únicamente los hallazgos de: {mesa_resumen}")
-
-    mesa_df = (
-        df[df["mesa"] == mesa_resumen].copy()
-        if not df.empty and "mesa" in df.columns
-        else pd.DataFrame()
+    st.markdown("## Síntesis de la sesión")
+    st.caption(
+        "Esta vista no transcribe los registros. Agrupa patrones, recurrencias, barreras y posibles líneas de seguimiento para facilitar una lectura ejecutiva."
     )
 
-    st.markdown(f"### {mesa_resumen}")
-
-    r1, r2, r3, r4 = st.columns(4)
-
-    total_mesa = len(mesa_df)
-    sectores = (
-        int(mesa_df["grupo"].nunique())
-        if not mesa_df.empty
-        else 0
-    )
-    altas_mesa = (
-        int((mesa_df["prioridad"] == "Alta").sum())
-        if not mesa_df.empty and "prioridad" in mesa_df.columns
-        else 0
-    )
-    sectoriales_mesa = (
-        int(
-            (
-                mesa_df["sectorialidad"]
-                == "Sí, parece sectorial"
-            ).sum()
+    s1, s2 = st.columns([1, 1.7])
+    with s1:
+        alcance = st.radio(
+            "Alcance de la síntesis",
+            ["Sesión completa", "Mesa específica"],
+            horizontal=True,
+            key="alcance_sintesis",
         )
-        if not mesa_df.empty
-        and "sectorialidad" in mesa_df.columns
-        else 0
-    )
+    with s2:
+        if alcance == "Mesa específica":
+            mesa_resumen = st.selectbox(
+                "Mesa a sintetizar",
+                MESAS,
+                key="mesa_resumen",
+                help="Si filtraste una mesa en Hallazgos, esa selección se conserva.",
+            )
+        else:
+            mesa_resumen = None
+            st.markdown("<div style='height:1.75rem'></div>", unsafe_allow_html=True)
+            st.markdown("**Incluye todas las mesas con registros.**")
 
-    r1.metric("Hallazgos", total_mesa)
-    r2.metric("Grupos escuchados", sectores)
-    r3.metric("Prioridad alta", altas_mesa)
-    r4.metric(
-        "Parecen sectoriales",
-        sectoriales_mesa
-    )
-
-    if mesa_df.empty:
-        st.info(
-            "Todavía no hay hallazgos registrados para esta mesa."
+    if alcance == "Mesa específica":
+        synth_df = (
+            df[df["mesa"] == mesa_resumen].copy()
+            if not df.empty and "mesa" in df.columns
+            else pd.DataFrame()
         )
-
+        scope_label = mesa_resumen
     else:
-        g1, g2 = st.columns(2)
+        synth_df = df.copy()
+        scope_label = "Sesión completa"
 
-        with g1:
-            st.markdown("### Barreras más mencionadas")
-            barr_series = (
-                mesa_df["barrera"]
-                .fillna("")
-                .astype(str)
-                .str.split(" | ", regex=False)
-                .explode()
-            )
-            barr_series = barr_series[barr_series != ""]
-            barr = (
-                barr_series
-                .value_counts()
-                .rename_axis("Barrera")
-                .reset_index(name="N")
-            )
-            if not barr.empty:
-                st.bar_chart(
-                    barr.set_index("Barrera")
+    analysis = analizar_sesion(synth_df, scope_label=scope_label)
+
+    if synth_df.empty:
+        st.info("Todavía no hay registros suficientes para generar la síntesis seleccionada.")
+    else:
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Hallazgos analizados", analysis["total"])
+        m2.metric("Grupos escuchados", analysis["groups"])
+        m3.metric("Prioridad alta", analysis["high"])
+        m4.metric("Hallazgos sectoriales", analysis["sectorial"])
+
+        signature = _scope_signature(synth_df, scope_label)
+        exec_key = f"sintesis_exec_{signature}"
+        pri_key = f"sintesis_pri_{signature}"
+        if exec_key not in st.session_state:
+            st.session_state[exec_key] = analysis["executive"]
+        if pri_key not in st.session_state:
+            st.session_state[pri_key] = "\n".join(f"• {x}" for x in analysis["priorities"])
+
+        st.markdown("### Lectura ejecutiva")
+        st.markdown(
+            f"""
+            <div style="background:#F4F8F1;border:1px solid #DDE5DA;border-left:5px solid #2F6E4A;border-radius:16px;padding:18px 20px;line-height:1.65;color:#2D3C33;">
+                {analysis['executive']}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("### Temas recurrentes")
+            if analysis["themes"]:
+                temas_df = pd.DataFrame(analysis["themes"][:6]).rename(
+                    columns={"tema": "Tema", "menciones": "Menciones", "grupos": "Grupos", "mesas": "Mesas"}
+                )
+                st.bar_chart(temas_df.set_index("Tema")["Menciones"])
+                for t in analysis["themes"][:5]:
+                    alcance_txt = f"{t['menciones']} menciones · {t['grupos']} grupos"
+                    if scope_label == "Sesión completa":
+                        alcance_txt += f" · {t['mesas']} mesas"
+                    st.markdown(f"**{t['tema']}**  \\n{alcance_txt}")
+            else:
+                st.caption("Todavía no hay suficiente texto codificado para identificar temas recurrentes.")
+
+        with c2:
+            st.markdown("### Barreras más recurrentes")
+            if analysis["barriers"]:
+                barr_df = pd.DataFrame(analysis["barriers"], columns=["Barrera", "Menciones"])
+                st.bar_chart(barr_df.set_index("Barrera"))
+                st.caption("Las barras representan menciones registradas, no número de participantes.")
+            else:
+                st.caption("No hay barreras clasificadas en los registros seleccionados.")
+
+        x1, x2 = st.columns(2)
+        with x1:
+            st.markdown("### Condiciones y apoyos señalados")
+            if analysis["supports"]:
+                for name, n in analysis["supports"][:6]:
+                    st.markdown(f"- **{name}** · {n} menciones")
+            else:
+                st.caption("No hay apoyos o soluciones suficientemente codificados.")
+        with x2:
+            st.markdown("### Actores habilitadores")
+            if analysis["actors"]:
+                for name, n in analysis["actors"][:6]:
+                    st.markdown(f"- **{name}** · {n} menciones")
+            else:
+                st.caption("No hay actores habilitadores suficientemente codificados.")
+
+        if scope_label == "Sesión completa" and analysis["mesa_summaries"]:
+            st.markdown("### Lectura por mesa")
+            for mesa_name, synth in analysis["mesa_summaries"]:
+                with st.expander(mesa_name):
+                    st.write(synth)
+
+        st.markdown("### Prioridades para seguimiento")
+        if analysis["priorities"]:
+            for p in analysis["priorities"]:
+                st.markdown(f"- {p}")
+        else:
+            st.caption("Todavía no hay suficientes hallazgos priorizados para proponer líneas de seguimiento.")
+
+        st.divider()
+        st.markdown("### Edición final antes de descargar")
+        st.caption(
+            "Puedes ajustar el texto generado. Los archivos Word y PDF usarán exactamente esta versión editada de la síntesis y de las prioridades."
+        )
+        executive_edit = st.text_area(
+            "Síntesis ejecutiva",
+            key=exec_key,
+            height=170,
+        )
+        priorities_edit = st.text_area(
+            "Conclusiones / prioridades",
+            key=pri_key,
+            height=150,
+        )
+
+        theme_chart_items = [(t["tema"], t["menciones"]) for t in analysis["themes"][:6]]
+        chart_theme = crear_grafica_barras(theme_chart_items, "Temas recurrentes") if theme_chart_items else None
+        chart_barrier = crear_grafica_barras(analysis["barriers"][:6], "Barreras recurrentes") if analysis["barriers"] else None
+
+        word_bytes = generar_docx_sintesis(
+            analysis,
+            executive_edit,
+            priorities_edit,
+            chart_theme=chart_theme,
+            chart_barrier=chart_barrier,
+        )
+        pdf_bytes = generar_pdf_sintesis(
+            analysis,
+            executive_edit,
+            priorities_edit,
+            chart_theme=chart_theme,
+            chart_barrier=chart_barrier,
+        )
+
+        d1, d2 = st.columns(2)
+        with d1:
+            if word_bytes:
+                st.download_button(
+                    "⬇️ Descargar síntesis en Word",
+                    data=word_bytes,
+                    file_name="Sintesis_Diagnostico_Economia_Circular_Jalisco.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True,
+                    type="primary",
                 )
             else:
-                st.caption("Sin barreras clasificadas todavía.")
+                st.warning("Para exportar a Word, agrega python-docx al archivo requirements.txt.")
+        with d2:
+            if pdf_bytes:
+                st.download_button(
+                    "⬇️ Descargar síntesis en PDF",
+                    data=pdf_bytes,
+                    file_name="Sintesis_Diagnostico_Economia_Circular_Jalisco.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    type="primary",
+                )
+            else:
+                st.warning("Para exportar a PDF, agrega reportlab al archivo requirements.txt.")
 
-        with g2:
-            st.markdown("### Hallazgos por grupo")
-            grp = (
-                mesa_df["grupo"]
-                .fillna("Sin grupo")
-                .value_counts()
-                .rename_axis("Grupo")
-                .reset_index(name="N")
-            )
-            st.bar_chart(
-                grp.set_index("Grupo")
-            )
-
-        st.markdown("### Hallazgos por pregunta de referencia")
-        if "pregunta_referencia" in mesa_df.columns:
-            por_pregunta = (
-                mesa_df["pregunta_referencia"]
-                .fillna("Sin referencia")
-                .replace("", "Sin referencia")
-                .value_counts()
-                .rename_axis("Pregunta")
-                .reset_index(name="Hallazgos")
-            )
-            st.dataframe(
-                por_pregunta,
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        st.markdown("### Prioridad alta / media")
-
-        prioritarios = mesa_df[
-            mesa_df["prioridad"].isin(
-                ["Alta", "Media"]
-            )
-        ][
-            [
-                c for c in [
-                    "grupo",
-                    "hallazgo",
-                    "barrera",
-                    "actor",
-                    "apoyo_solucion",
-                    "prioridad",
-                ]
-                if c in mesa_df.columns
-            ]
-        ]
-
-        st.dataframe(
-            prioritarios,
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        st.markdown("### Notas para la cosecha plenaria")
-
-        st.text_area(
-            "Escribe aquí 2–3 hallazgos, tensiones o necesidades recurrentes de la mesa",
-            placeholder="1. ...\n2. ...\n3. ...",
-            height=130,
-            key=f"cosecha_{mesa}",
+        st.caption(
+            "Los documentos usan Montserrat cuando la fuente está disponible en el servidor o en assets; en Word se solicita Montserrat como fuente del documento. Ambos formatos incluyen logotipos disponibles en assets y paginación en el pie."
         )
 
 
