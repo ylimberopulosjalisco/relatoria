@@ -862,6 +862,54 @@ THEME_KEYWORDS = {
     ],
 }
 
+
+NARRATIVE_BY_THEME = {
+    "Financiamiento e inversión": (
+        "La intención existe, pero convertirla en inversión sigue siendo un reto",
+        "La conversación apunta a que varias oportunidades de economía circular se frenan cuando llega el momento de financiar su implementación, repartir riesgos o justificar la inversión."
+    ),
+    "Capacidades y conocimiento": (
+        "La economía circular todavía necesita traducirse en capacidades concretas",
+        "Los registros sugieren que no basta con reconocer el concepto: las organizaciones necesitan capacidades internas, asistencia técnica y criterios prácticos para convertir oportunidades en proyectos ejecutables."
+    ),
+    "Regulación y trámites": (
+        "La claridad regulatoria puede acelerar o frenar la adopción",
+        "Los hallazgos muestran que las reglas, permisos y criterios de cumplimiento forman parte de la decisión de avanzar; cuando no son claros, aumentan la incertidumbre y el costo de implementar."
+    ),
+    "Coordinación y colaboración": (
+        "Los retos rebasan a una sola empresa",
+        "Parte de los problemas identificados requieren coordinación entre empresas, gobierno, academia, cámaras y otros actores, más que soluciones aisladas dentro de cada organización."
+    ),
+    "Tecnología e innovación": (
+        "La adopción tecnológica necesita evidencia y acompañamiento",
+        "La conversación vincula la innovación con la posibilidad de probar, validar y escalar soluciones que puedan demostrar resultados antes de convertirse en inversiones mayores."
+    ),
+    "Mercado y demanda": (
+        "La circularidad necesita una señal económica clara",
+        "Los registros sugieren que una solución circular difícilmente escala si no encuentra demanda, compradores, condiciones comerciales o una ventaja que la haga competitiva."
+    ),
+    "Proveedores y cadena de valor": (
+        "Cerrar ciclos exige mirar más allá de los límites de cada empresa",
+        "Los hallazgos apuntan a que proveedores, clientes y operadores logísticos forman parte de la solución; muchos flujos no pueden resolverse únicamente dentro de una organización."
+    ),
+    "Información y medición": (
+        "Sin información clara es difícil priorizar y demostrar valor",
+        "La conversación muestra una necesidad de datos, métricas y evidencia que permitan reconocer oportunidades, justificar decisiones y comunicar mejor el valor de las prácticas circulares."
+    ),
+    "Infraestructura": (
+        "Algunas soluciones requieren capacidades que una empresa no puede construir sola",
+        "Los registros sugieren que ciertos retos dependen de infraestructura de acopio, tratamiento o procesamiento que puede requerir esquemas compartidos o especializados."
+    ),
+    "Materiales y residuos": (
+        "Los residuos aparecen como flujos con valor potencial, no sólo como un costo",
+        "La conversación abre oportunidades para reducir, reutilizar o valorizar materiales y subproductos, siempre que existan condiciones técnicas, comerciales y de coordinación para hacerlo."
+    ),
+    "Agua y energía": (
+        "La eficiencia puede ser una puerta de entrada tangible a la circularidad",
+        "Los hallazgos relacionados con agua y energía apuntan a oportunidades de ahorro y eficiencia que pueden ser más fáciles de medir y convertir en proyectos concretos."
+    ),
+}
+
 ACTION_BY_THEME = {
     "Financiamiento e inversión": "estructurar mecanismos de coinversión, crédito o garantías que reduzcan el riesgo de implementación",
     "Capacidades y conocimiento": "fortalecer asistencia técnica, capacitación y capacidades internas para convertir oportunidades en proyectos ejecutables",
@@ -957,21 +1005,103 @@ def _scope_signature(df, scope):
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:10]
 
 
+def _is_meaningful(value):
+    s = _clean_text(value)
+    if len(s) < 12:
+        return False
+    low = s.lower().strip(" .,:;-_")
+    if low in {"xxx", "xxxx", "prueba", "test", "sin información", "sin informacion"}:
+        return False
+    if re.fullmatch(r"(.)\1{4,}", low):
+        return False
+    return True
+
+
+def _theme_subset(df, theme):
+    if df.empty or theme not in THEME_KEYWORDS:
+        return df.iloc[0:0]
+    idxs = []
+    for idx, row in df.iterrows():
+        txt = _row_text(row)
+        if any(k.lower() in txt for k in THEME_KEYWORDS[theme]):
+            idxs.append(idx)
+    return df.loc[idxs] if idxs else df.iloc[0:0]
+
+
+def _representative_texts(df, fields=("hallazgo", "ejemplo"), limit=2, max_chars=180):
+    out = []
+    for field in fields:
+        if field not in df.columns:
+            continue
+        for value in df[field].tolist():
+            txt = _clean_text(value)
+            if not _is_meaningful(txt):
+                continue
+            # El formulario a veces antepone etiquetas como "Problema:".
+            txt = re.sub(r"^(Problema|Oportunidad|Hallazgo)\s*:\s*", "", txt, flags=re.I)
+            if len(txt) > max_chars:
+                txt = txt[:max_chars].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+            if txt.lower() not in [x.lower() for x in out]:
+                out.append(txt)
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def _make_grandes_hallazgos(df, themes, scope_label):
+    findings = []
+    for t in themes[:4]:
+        theme = t["tema"]
+        sub = _theme_subset(df, theme)
+        if sub.empty:
+            continue
+        title, lead = NARRATIVE_BY_THEME.get(
+            theme,
+            (theme, f"Este tema apareció de forma relevante en la conversación y merece una lectura conjunta de los registros asociados.")
+        )
+        parts = [lead]
+        barriers = _top_values(sub, "barrera", 3)
+        if barriers:
+            parts.append(
+                "En los registros asociados, las principales fricciones se relacionan con "
+                + _join_items([b[0].lower() for b in barriers[:3]]) + "."
+            )
+        reps = _representative_texts(sub, limit=2)
+        if reps:
+            if len(reps) == 1:
+                parts.append(f"Una situación que ayuda a entenderlo es: {reps[0].rstrip('.') }.")
+            else:
+                parts.append(f"Entre las situaciones que ayudan a entenderlo aparecen {reps[0].rstrip('.')} y {reps[1].rstrip('.')}.")
+        supports = [x for x in _top_values(sub, "apoyo_solucion", 3) if _is_meaningful(x[0])]
+        if supports:
+            parts.append(
+                "Como vías de avance, los participantes mencionaron "
+                + _join_items([x[0].rstrip(".") for x in supports[:2]]) + "."
+            )
+        action = ACTION_BY_THEME.get(theme)
+        if action:
+            parts.append(f"Para la agenda de seguimiento, esto sugiere {action}.")
+        findings.append({
+            "tema": theme,
+            "titulo": title,
+            "texto": " ".join(parts),
+            "grupos": t.get("grupos", 0),
+            "mesas": t.get("mesas", 0),
+        })
+    return findings
+
+
 def _sintesis_corta(df, label):
     if df.empty:
         return f"{label}: sin registros suficientes para elaborar una síntesis."
-    themes = _theme_stats(df)[:3]
-    barriers = _top_values(df, "barrera", 3)
-    supports = _top_values(df, "apoyo_solucion", 2)
-    groups = int(df["grupo"].dropna().astype(str).nunique()) if "grupo" in df.columns else 0
-    parts = [f"La mesa reunió {len(df)} hallazgos provenientes de {groups} grupo{'s' if groups != 1 else ''}."]
-    if themes:
-        parts.append(f"Los temas con mayor recurrencia fueron {_join_items([t['tema'].lower() for t in themes])}.")
-    if barriers:
-        parts.append(f"Las barreras más señaladas se concentraron en {_join_items([b[0].lower() for b in barriers])}.")
-    if supports:
-        parts.append(f"Como condiciones de avance aparecen {_join_items([s[0].lower() for s in supports])}.")
-    return " ".join(parts)
+    themes = _theme_stats(df)[:2]
+    findings = _make_grandes_hallazgos(df, themes, label)
+    if findings:
+        return " ".join(f["texto"] for f in findings[:2])
+    reps = _representative_texts(df, limit=2)
+    if reps:
+        return "La conversación dejó como señales principales " + _join_items([r.rstrip('.') for r in reps]) + "."
+    return "Los registros de esta mesa todavía son insuficientes para construir una lectura analítica robusta."
 
 
 def analizar_sesion(df, scope_label="Sesión completa"):
@@ -984,43 +1114,39 @@ def analizar_sesion(df, scope_label="Sesión completa"):
 
     themes = _theme_stats(data)
     barriers = _top_values(data, "barrera", 6)
-    supports = _top_values(data, "apoyo_solucion", 6)
+    supports = [x for x in _top_values(data, "apoyo_solucion", 6) if _is_meaningful(x[0])]
     actors = _top_values(data, "actor", 6)
+    grandes_hallazgos = _make_grandes_hallazgos(data, themes, scope_label)
 
+    # Lectura ejecutiva deliberadamente narrativa: la numeralia queda como contexto, no como protagonista.
     executive = []
-    executive.append(
-        f"Se analizaron {total} hallazgos de {groups} grupo{'s' if groups != 1 else ''}"
-        + (f" distribuidos en {mesas} mesas temáticas." if scope_label == "Sesión completa" else ".")
-    )
-    if themes:
-        top = themes[:3]
+    if grandes_hallazgos:
+        top_titles = [f["tema"].lower() for f in grandes_hallazgos[:3]]
         executive.append(
-            "La conversación se concentró principalmente en "
-            + _join_items([t["tema"].lower() for t in top])
-            + "."
+            "La sesión deja una señal clara: la transición hacia una economía circular no se está planteando únicamente como un asunto ambiental, sino como un reto de implementación empresarial y de coordinación del entorno."
         )
-        trans = [t for t in top if t["grupos"] >= 2 or t["mesas"] >= 2]
+        executive.append(
+            "Las conversaciones convergen especialmente en " + _join_items(top_titles) + ", que aparecen conectados entre sí más que como problemas separados."
+        )
+    if themes:
+        trans = [t for t in themes[:5] if t["grupos"] >= 2 or (scope_label == "Sesión completa" and t["mesas"] >= 2)]
         if trans:
             executive.append(
-                "La presencia de estos temas en distintos grupos"
+                "El hecho de que varios de estos temas aparezcan en distintos grupos"
                 + (" y mesas" if scope_label == "Sesión completa" else "")
-                + " sugiere que varios retos son transversales y no únicamente casos aislados de una empresa."
+                + " sugiere que hay condiciones sistémicas que conviene atender de manera transversal, y no sólo caso por caso."
             )
     if barriers:
         executive.append(
-            "Las barreras con mayor recurrencia fueron "
+            "En conjunto, las intervenciones muestran que las principales fricciones están en "
             + _join_items([x[0].lower() for x in barriers[:3]])
-            + "."
+            + "; esto ayuda a explicar por qué algunas prácticas con potencial no terminan de convertirse en decisiones, inversiones o proyectos."
         )
     if supports:
         executive.append(
-            "Entre las condiciones o apoyos señalados para avanzar destacan "
-            + _join_items([x[0].lower() for x in supports[:3]])
-            + "."
-        )
-    if high or sectorial:
-        executive.append(
-            f"Se identificaron {high} hallazgos de prioridad alta y {sectorial} hallazgos marcados como potencialmente sectoriales, que conviene revisar primero en la etapa de priorización."
+            "También aparece una agenda de solución: "
+            + _join_items([x[0].rstrip(".") for x in supports[:2]])
+            + ". Más que acciones aisladas, estas señales pueden orientar instrumentos de acompañamiento, articulación y coinversión."
         )
 
     priority_df = data
@@ -1034,8 +1160,11 @@ def analizar_sesion(df, scope_label="Sesión completa"):
         action = ACTION_BY_THEME.get(t["tema"])
         if action:
             priorities.append(f"{t['tema']}: {action}.")
-    if not priorities and supports:
-        priorities = [f"Profundizar en {x[0].lower()} como posible línea de intervención." for x in supports[:4]]
+    if not priorities:
+        for f in grandes_hallazgos[:3]:
+            action = ACTION_BY_THEME.get(f["tema"])
+            if action:
+                priorities.append(f"{f['tema']}: {action}.")
 
     mesa_summaries = []
     if not data.empty and "mesa" in data.columns:
@@ -1045,19 +1174,11 @@ def analizar_sesion(df, scope_label="Sesión completa"):
                 mesa_summaries.append((m, _sintesis_corta(md, m)))
 
     return {
-        "scope": scope_label,
-        "total": total,
-        "groups": groups,
-        "mesas": mesas,
-        "high": high,
-        "sectorial": sectorial,
-        "themes": themes,
-        "barriers": barriers,
-        "supports": supports,
-        "actors": actors,
-        "executive": " ".join(executive),
-        "priorities": priorities,
-        "mesa_summaries": mesa_summaries,
+        "scope": scope_label, "total": total, "groups": groups, "mesas": mesas,
+        "high": high, "sectorial": sectorial, "themes": themes, "barriers": barriers,
+        "supports": supports, "actors": actors, "executive": " ".join(executive),
+        "priorities": priorities, "mesa_summaries": mesa_summaries,
+        "grandes_hallazgos": grandes_hallazgos,
     }
 
 
@@ -1215,31 +1336,21 @@ def generar_docx_sintesis(analysis, executive_text, priorities_text, chart_theme
     for para in [x.strip() for x in re.split(r"(?<=[.!?])\s+", executive_text) if x.strip()]:
         doc.add_paragraph(para)
 
-    doc.add_heading("Patrones principales", level=1)
-    for t in analysis["themes"][:6]:
-        p = doc.add_paragraph(style="List Bullet")
-        p.add_run(f"{t['tema']}. ").bold = True
-        alcance = f"{t['menciones']} menciones; presente en {t['grupos']} grupo{'s' if t['grupos'] != 1 else ''}"
-        if analysis["scope"] == "Sesión completa":
-            alcance += f" y {t['mesas']} mesa{'s' if t['mesas'] != 1 else ''}"
-        p.add_run(alcance + ".")
-
-    if analysis["barriers"]:
-        doc.add_heading("Barreras recurrentes", level=1)
-        for name, n in analysis["barriers"][:6]:
-            doc.add_paragraph(f"{name}: {n} menciones.", style="List Bullet")
-
-    if analysis["supports"]:
-        doc.add_heading("Condiciones y apoyos señalados", level=1)
-        for name, n in analysis["supports"][:6]:
-            doc.add_paragraph(f"{name}: {n} menciones.", style="List Bullet")
+    doc.add_heading("Grandes hallazgos", level=1)
+    for finding in analysis.get("grandes_hallazgos", [])[:4]:
+        doc.add_heading(finding["titulo"], level=2)
+        doc.add_paragraph(finding["texto"])
 
     if analysis["actors"]:
-        doc.add_heading("Actores habilitadores mencionados", level=1)
-        doc.add_paragraph(_join_items([x[0] for x in analysis["actors"][:6]]) + ".")
+        doc.add_heading("Qué actores aparecen como parte de la solución", level=1)
+        doc.add_paragraph(
+            "La conversación no concentra la responsabilidad en un solo actor. Entre quienes aparecen con capacidad de habilitar cambios se encuentran "
+            + _join_items([x[0] for x in analysis["actors"][:6]])
+            + ". La lectura conjunta sugiere que la implementación requerirá combinar decisiones internas de las empresas con acompañamiento, coordinación y mecanismos externos de apoyo."
+        )
 
     if analysis["mesa_summaries"] and analysis["scope"] == "Sesión completa":
-        doc.add_heading("Lectura por mesa", level=1)
+        doc.add_heading("Qué nos deja cada mesa", level=1)
         for mesa_name, synth in analysis["mesa_summaries"]:
             doc.add_heading(mesa_name, level=2)
             doc.add_paragraph(synth)
@@ -1257,8 +1368,7 @@ def generar_docx_sintesis(analysis, executive_text, priorities_text, chart_theme
 
     doc.add_heading("Nota metodológica", level=1)
     doc.add_paragraph(
-        "Esta síntesis agrupa y analiza los registros capturados durante la sesión. No reproduce una transcripción literal. "
-        "Las frecuencias representan menciones registradas y sirven para identificar recurrencias, no para estimar proporciones de participantes."
+        "Esta síntesis interpreta y agrupa los registros capturados durante la sesión para identificar grandes hallazgos, conexiones y posibles implicaciones. No reproduce una transcripción literal ni atribuye comentarios individuales. Las gráficas se conservan únicamente como apoyo contextual."
     )
 
     footer = sec.footer
@@ -1343,26 +1453,22 @@ def generar_pdf_sintesis(analysis, executive_text, priorities_text, chart_theme=
     story += [lt, Paragraph("Síntesis de sesión", title), Paragraph("Diagnóstico de Economía Circular para el Estado de Jalisco", subtitle), Paragraph(f"Alcance: {analysis['scope']} &nbsp;&nbsp;|&nbsp;&nbsp; Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", meta)]
 
     story += [Paragraph("Lectura ejecutiva", h1), Paragraph(executive_text.replace("&", "&amp;"), body)]
-    story.append(Paragraph("Patrones principales", h1))
-    for t in analysis["themes"][:6]:
-        alcance = f"{t['menciones']} menciones; presente en {t['grupos']} grupo{'s' if t['grupos'] != 1 else ''}"
-        if analysis["scope"] == "Sesión completa":
-            alcance += f" y {t['mesas']} mesa{'s' if t['mesas'] != 1 else ''}"
-        story.append(Paragraph(f"• <b>{t['tema']}.</b> {alcance}.", bullet))
-
-    if analysis["barriers"]:
-        story.append(Paragraph("Barreras recurrentes", h1))
-        for name, n in analysis["barriers"][:6]:
-            story.append(Paragraph(f"• <b>{name}:</b> {n} menciones.", bullet))
-    if analysis["supports"]:
-        story.append(Paragraph("Condiciones y apoyos señalados", h1))
-        for name, n in analysis["supports"][:6]:
-            story.append(Paragraph(f"• <b>{name}:</b> {n} menciones.", bullet))
+    story.append(Paragraph("Grandes hallazgos", h1))
+    for finding in analysis.get("grandes_hallazgos", [])[:4]:
+        story += [
+            Paragraph(finding["titulo"].replace("&", "&amp;"), h2),
+            Paragraph(finding["texto"].replace("&", "&amp;"), body),
+        ]
     if analysis["actors"]:
-        story += [Paragraph("Actores habilitadores mencionados", h1), Paragraph((_join_items([x[0] for x in analysis["actors"][:6]]) + ".").replace("&", "&amp;"), body)]
+        actor_text = (
+            "La conversación no concentra la responsabilidad en un solo actor. Entre quienes aparecen con capacidad de habilitar cambios se encuentran "
+            + _join_items([x[0] for x in analysis["actors"][:6]])
+            + ". La lectura conjunta sugiere que la implementación requerirá combinar decisiones internas de las empresas con acompañamiento, coordinación y mecanismos externos de apoyo."
+        )
+        story += [Paragraph("Qué actores aparecen como parte de la solución", h1), Paragraph(actor_text.replace("&", "&amp;"), body)]
 
     if analysis["mesa_summaries"] and analysis["scope"] == "Sesión completa":
-        story.append(Paragraph("Lectura por mesa", h1))
+        story.append(Paragraph("Qué nos deja cada mesa", h1))
         for mesa_name, synth in analysis["mesa_summaries"]:
             story += [Paragraph(mesa_name.replace("&", "&amp;"), h2), Paragraph(synth.replace("&", "&amp;"), body)]
 
@@ -1378,8 +1484,7 @@ def generar_pdf_sintesis(analysis, executive_text, priorities_text, chart_theme=
             story += [RLImage(io.BytesIO(chart_barrier), width=175*mm, height=70*mm, kind="proportional"), Spacer(1, 4*mm)]
 
     story += [Paragraph("Nota metodológica", h1), Paragraph(
-        "Esta síntesis agrupa y analiza los registros capturados durante la sesión. No reproduce una transcripción literal. "
-        "Las frecuencias representan menciones registradas y sirven para identificar recurrencias, no para estimar proporciones de participantes.", body)]
+        "Esta síntesis interpreta y agrupa los registros capturados durante la sesión para identificar grandes hallazgos, conexiones y posibles implicaciones. No reproduce una transcripción literal ni atribuye comentarios individuales. Las gráficas se conservan únicamente como apoyo contextual.", body)]
 
     doc.build(story, canvasmaker=_NumberedCanvas)
     return out.getvalue()
@@ -2259,11 +2364,12 @@ with tab_resumen:
     if synth_df.empty:
         st.info("Todavía no hay registros suficientes para generar la síntesis seleccionada.")
     else:
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Hallazgos analizados", analysis["total"])
-        m2.metric("Grupos escuchados", analysis["groups"])
-        m3.metric("Prioridad alta", analysis["high"])
-        m4.metric("Hallazgos sectoriales", analysis["sectorial"])
+        # Contexto mínimo de cobertura; la síntesis privilegia la interpretación sobre la numeralia.
+        cobertura = f"Esta lectura integra aportaciones de {analysis['groups']} grupo{'s' if analysis['groups'] != 1 else ''}"
+        if scope_label == "Sesión completa":
+            cobertura += f" en {analysis['mesas']} mesa{'s' if analysis['mesas'] != 1 else ''}"
+        cobertura += "."
+        st.caption(cobertura)
 
         signature = _scope_signature(synth_df, scope_label)
         exec_key = f"sintesis_exec_{signature}"
@@ -2276,56 +2382,41 @@ with tab_resumen:
         st.markdown("### Lectura ejecutiva")
         st.markdown(
             f"""
-            <div style="background:#F4F8F1;border:1px solid #DDE5DA;border-left:5px solid #2F6E4A;border-radius:16px;padding:18px 20px;line-height:1.65;color:#2D3C33;">
+            <div style="background:#F4F8F1;border:1px solid #DDE5DA;border-left:5px solid #2F6E4A;border-radius:16px;padding:20px 22px;line-height:1.72;color:#2D3C33;font-size:1.01rem;">
                 {analysis['executive']}
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("### Temas recurrentes")
-            if analysis["themes"]:
-                temas_df = pd.DataFrame(analysis["themes"][:6]).rename(
-                    columns={"tema": "Tema", "menciones": "Menciones", "grupos": "Grupos", "mesas": "Mesas"}
+        st.markdown("### Grandes hallazgos")
+        st.caption("Una lectura interpretativa de lo que se repite, cómo se conecta y qué implica para avanzar.")
+        if analysis.get("grandes_hallazgos"):
+            for i, finding in enumerate(analysis["grandes_hallazgos"][:4], start=1):
+                st.markdown(
+                    f"""
+                    <div style="background:white;border:1px solid #E1E7DF;border-radius:16px;padding:18px 20px;margin:0 0 12px 0;box-shadow:0 3px 12px rgba(23,59,46,.04);">
+                      <div style="font-size:.76rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#6B7D71;margin-bottom:5px;">Hallazgo {i}</div>
+                      <div style="font-size:1.12rem;font-weight:800;color:#173B2E;margin-bottom:7px;">{finding['titulo']}</div>
+                      <div style="line-height:1.68;color:#33443A;">{finding['texto']}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
-                st.bar_chart(temas_df.set_index("Tema")["Menciones"])
-                for t in analysis["themes"][:5]:
-                    alcance_txt = f"{t['menciones']} menciones · {t['grupos']} grupos"
-                    if scope_label == "Sesión completa":
-                        alcance_txt += f" · {t['mesas']} mesas"
-                    st.markdown(f"**{t['tema']}**  \\n{alcance_txt}")
-            else:
-                st.caption("Todavía no hay suficiente texto codificado para identificar temas recurrentes.")
+        else:
+            st.caption("Todavía no hay suficiente información para construir grandes hallazgos.")
 
-        with c2:
-            st.markdown("### Barreras más recurrentes")
-            if analysis["barriers"]:
-                barr_df = pd.DataFrame(analysis["barriers"], columns=["Barrera", "Menciones"])
-                st.bar_chart(barr_df.set_index("Barrera"))
-                st.caption("Las barras representan menciones registradas, no número de participantes.")
-            else:
-                st.caption("No hay barreras clasificadas en los registros seleccionados.")
-
-        x1, x2 = st.columns(2)
-        with x1:
-            st.markdown("### Condiciones y apoyos señalados")
-            if analysis["supports"]:
-                for name, n in analysis["supports"][:6]:
-                    st.markdown(f"- **{name}** · {n} menciones")
-            else:
-                st.caption("No hay apoyos o soluciones suficientemente codificados.")
-        with x2:
-            st.markdown("### Actores habilitadores")
-            if analysis["actors"]:
-                for name, n in analysis["actors"][:6]:
-                    st.markdown(f"- **{name}** · {n} menciones")
-            else:
-                st.caption("No hay actores habilitadores suficientemente codificados.")
+        if analysis["actors"]:
+            st.markdown("### Qué actores aparecen como parte de la solución")
+            actores = _join_items([x[0] for x in analysis["actors"][:6]])
+            st.write(
+                "La conversación no concentra la responsabilidad en un solo actor. "
+                f"Aparecen {actores} como parte del entorno que puede habilitar cambios. "
+                "Esto apunta a una agenda que combina decisiones internas de las empresas con acompañamiento, coordinación y mecanismos externos de apoyo."
+            )
 
         if scope_label == "Sesión completa" and analysis["mesa_summaries"]:
-            st.markdown("### Lectura por mesa")
+            st.markdown("### Qué nos deja cada mesa")
             for mesa_name, synth in analysis["mesa_summaries"]:
                 with st.expander(mesa_name):
                     st.write(synth)
@@ -2335,7 +2426,20 @@ with tab_resumen:
             for p in analysis["priorities"]:
                 st.markdown(f"- {p}")
         else:
-            st.caption("Todavía no hay suficientes hallazgos priorizados para proponer líneas de seguimiento.")
+            st.caption("Todavía no hay suficientes hallazgos para proponer líneas de seguimiento.")
+
+        # Las gráficas quedan al final como apoyo, no como eje de la lectura.
+        with st.expander("Ver gráficas de apoyo"):
+            c1, c2 = st.columns(2)
+            with c1:
+                if analysis["themes"]:
+                    temas_df = pd.DataFrame(analysis["themes"][:6]).rename(columns={"tema": "Tema", "menciones": "Menciones"})
+                    st.bar_chart(temas_df.set_index("Tema")["Menciones"])
+            with c2:
+                if analysis["barriers"]:
+                    barr_df = pd.DataFrame(analysis["barriers"], columns=["Barrera", "Menciones"])
+                    st.bar_chart(barr_df.set_index("Barrera"))
+            st.caption("Las gráficas muestran recurrencias en los registros; no representan proporciones de participantes.")
 
         st.divider()
         st.markdown("### Edición final antes de descargar")
