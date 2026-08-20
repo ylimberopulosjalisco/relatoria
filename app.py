@@ -332,6 +332,57 @@ st.markdown(
         background: linear-gradient(120deg, {GREEN_DARK}, {INK}) !important;
     }}
 
+    /* ---------- Sidebar / selectores largos ---------- */
+    section[data-testid="stSidebar"] {
+        width: 390px !important;
+        min-width: 390px !important;
+    }
+    section[data-testid="stSidebar"] > div {
+        width: 390px !important;
+    }
+
+    /* El valor seleccionado debe poder leerse completo */
+    section[data-testid="stSidebar"] div[data-baseweb="select"] > div {
+        min-height: 44px !important;
+        height: auto !important;
+    }
+    section[data-testid="stSidebar"] div[data-baseweb="select"] span {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        line-height: 1.25 !important;
+    }
+
+    /* El menú desplegable de BaseWeb vive fuera del sidebar.
+       Ensancharlo y permitir salto de línea evita que se corte. */
+    div[data-baseweb="popover"] {
+        min-width: 460px !important;
+        width: max-content !important;
+        max-width: min(620px, 80vw) !important;
+    }
+    div[data-baseweb="popover"] [role="listbox"] {
+        min-width: 460px !important;
+        width: max-content !important;
+        max-width: min(620px, 80vw) !important;
+    }
+    div[data-baseweb="popover"] [role="option"] {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        line-height: 1.3 !important;
+        height: auto !important;
+        min-height: 42px !important;
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
+    }
+    div[data-baseweb="popover"] [role="option"] > div,
+    div[data-baseweb="popover"] [role="option"] span {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        max-width: none !important;
+    }
+
     /* ---------- Sidebar notes ---------- */
     .sidebar-note {{
         background: linear-gradient(120deg, rgba(234,244,241,.96), rgba(255,255,255,.92));
