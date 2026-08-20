@@ -14,7 +14,7 @@ except Exception:
 
 
 # ==========================================================
-# RELATORÍA COINVIERTE — BUGFIX GUARDADO SIN DELTAGENERATOR
+# RELATORÍA COINVIERTE — OTRA BARRERA Y OTRO ACTOR SIEMPRE HABILITADOS
 # ==========================================================
 
 st.set_page_config(
@@ -83,6 +83,11 @@ st.markdown(
         border-right: 1px solid {BORDER};
         position: relative;
         overflow: hidden;
+        min-width: 340px !important;
+        width: 340px !important;
+    }}
+    [data-testid="stSidebar"] > div:first-child {{
+        width: 340px !important;
     }}
     [data-testid="stSidebar"]::after {{
         content: "";
@@ -722,6 +727,43 @@ def info_card(icon, icon_class, label, value):
 
 
 # ==========================================================
+# Estado compartido entre Hallazgos y Resumen
+# ==========================================================
+if "mesa_contexto" not in st.session_state or st.session_state["mesa_contexto"] not in MESAS:
+    st.session_state["mesa_contexto"] = MESAS[0]
+if "mesa_resumen" not in st.session_state or st.session_state["mesa_resumen"] not in MESAS:
+    st.session_state["mesa_resumen"] = st.session_state["mesa_contexto"]
+
+def sync_mesa_from_sidebar():
+    mesa_sel = st.session_state.get("mesa_contexto")
+    if mesa_sel in MESAS:
+        st.session_state["mesa_resumen"] = mesa_sel
+
+def sync_mesa_from_hallazgos():
+    mesa_sel = st.session_state.get("f_mesa")
+    if mesa_sel in MESAS:
+        st.session_state["mesa_resumen"] = mesa_sel
+
+def nuevo_hallazgo():
+    for key, default in {
+        "barreras_live": [],
+        "barrera_otra_live": "",
+        "actores_live": [],
+        "actor_otro_live": "",
+        "tipo_hallazgo_gremial_live": [],
+        "afectacion_gremial_live": [],
+        "actores_gremiales_live": [],
+        "instrumentos_gremiales_live": [],
+        "otro_tipo_gremial_live": "",
+        "otro_afectado_gremial_live": "",
+        "otro_actor_gremial_live": "",
+        "otro_instrumento_gremial_live": "",
+    }.items():
+        st.session_state[key] = default
+    st.session_state["hallazgo_guardado"] = False
+
+
+# ==========================================================
 # Sidebar
 # ==========================================================
 st.sidebar.markdown(
@@ -735,7 +777,13 @@ st.sidebar.markdown(
 )
 st.sidebar.markdown("## Datos de la ronda")
 
-mesa = st.sidebar.selectbox("Mesa temática", MESAS)
+mesa = st.sidebar.selectbox(
+    "Mesa temática",
+    MESAS,
+    key="mesa_contexto",
+    on_change=sync_mesa_from_sidebar,
+)
+st.sidebar.caption(f"Mesa seleccionada: {mesa}")
 grupo = st.sidebar.selectbox("Grupo / sector", GRUPOS)
 ronda = st.sidebar.selectbox("Ronda", [1, 2, 3, 4])
 relator = st.sidebar.text_input("Relator/a", placeholder="Nombre")
@@ -1003,29 +1051,25 @@ with tab_captura:
 
         otro_tipo = st.text_input(
             "Otro tipo de hallazgo",
-            placeholder="Especifica otra categoría",
-            disabled="Otro" not in tipo_hallazgo_sel,
+            placeholder="Agrega otra categoría o precisión",
             key="otro_tipo_gremial_live",
         )
 
         otro_afectado = st.text_input(
             "Otro grupo afectado",
-            placeholder="Especifica otro grupo o subsector",
-            disabled="Otro" not in afectacion_sel,
+            placeholder="Agrega otro grupo, subsector o precisión",
             key="otro_afectado_gremial_live",
         )
 
         otro_actor_gremial = st.text_input(
             "Otro actor",
-            placeholder="Especifica otro actor",
-            disabled="Otro" not in actores_gremiales_sel,
+            placeholder="Agrega otro actor o precisión",
             key="otro_actor_gremial_live",
         )
 
         otro_instrumento = st.text_input(
             "Otro instrumento o acción",
-            placeholder="Especifica otro instrumento o acción",
-            disabled="Otro" not in instrumentos_sel,
+            placeholder="Agrega otro instrumento, acción o precisión",
             key="otro_instrumento_gremial_live",
         )
 
@@ -1060,20 +1104,20 @@ with tab_captura:
                     st.error("Escribe el nombre del relator/a en la barra lateral.")
                 else:
                     tipo_txt = " | ".join(tipo_hallazgo_sel)
-                    if "Otro" in tipo_hallazgo_sel and otro_tipo.strip():
-                        tipo_txt = f"{tipo_txt} | Otro: {otro_tipo.strip()}"
+                    if otro_tipo.strip():
+                        tipo_txt = f"{tipo_txt} | Otro: {otro_tipo.strip()}" if tipo_txt else f"Otro: {otro_tipo.strip()}"
 
                     afectacion_txt = " | ".join(afectacion_sel)
-                    if "Otro" in afectacion_sel and otro_afectado.strip():
-                        afectacion_txt = f"{afectacion_txt} | Otro: {otro_afectado.strip()}"
+                    if otro_afectado.strip():
+                        afectacion_txt = f"{afectacion_txt} | Otro: {otro_afectado.strip()}" if afectacion_txt else f"Otro: {otro_afectado.strip()}"
 
                     actor_txt = " | ".join(actores_gremiales_sel)
-                    if "Otro" in actores_gremiales_sel and otro_actor_gremial.strip():
-                        actor_txt = f"{actor_txt} | Otro: {otro_actor_gremial.strip()}"
+                    if otro_actor_gremial.strip():
+                        actor_txt = f"{actor_txt} | Otro: {otro_actor_gremial.strip()}" if actor_txt else f"Otro: {otro_actor_gremial.strip()}"
 
                     instrumento_txt = " | ".join(instrumentos_sel)
-                    if "Otro" in instrumentos_sel and otro_instrumento.strip():
-                        instrumento_txt = f"{instrumento_txt} | Otro: {otro_instrumento.strip()}"
+                    if otro_instrumento.strip():
+                        instrumento_txt = f"{instrumento_txt} | Otro: {otro_instrumento.strip()}" if instrumento_txt else f"Otro: {otro_instrumento.strip()}"
 
                     rec = {
                         "fecha_hora": datetime.now().isoformat(timespec="seconds"),
@@ -1102,9 +1146,19 @@ with tab_captura:
 
                     ok, msg = save_record(rec)
                     if ok:
-                        _msg_guardado = st.success("Hallazgo gremial guardado correctamente.")
+                        st.session_state["hallazgo_guardado"] = True
                     else:
                         _msg_error = st.error(msg)
+
+        if st.session_state.get("hallazgo_guardado"):
+            st.success("Hallazgo gremial guardado correctamente.")
+            st.button(
+                "+ Registrar nuevo hallazgo",
+                type="primary",
+                use_container_width=True,
+                on_click=nuevo_hallazgo,
+                key="btn_nuevo_hallazgo",
+            )
 
     else:
         # Formulario estándar para sectores primario, secundario y terciario.
@@ -1119,8 +1173,7 @@ with tab_captura:
             )
             barrera_otra = st.text_input(
                 "Otra barrera",
-                placeholder="Describe otra barrera",
-                disabled="Otra" not in barreras_sel,
+                placeholder="Agrega otra barrera o precisión, aunque ya hayas seleccionado una categoría",
                 key="barrera_otra_live"
             )
 
@@ -1133,8 +1186,7 @@ with tab_captura:
             )
             actor_otro = st.text_input(
                 "Otro actor",
-                placeholder="Menciona otro actor",
-                disabled="Otro" not in actores_sel,
+                placeholder="Agrega otro actor o precisión, aunque ya hayas seleccionado uno",
                 key="actor_otro_live"
             )
 
@@ -1243,18 +1295,10 @@ with tab_captura:
                         "pregunta_referencia": pregunta_referencia,
                         "hallazgo": hallazgo.strip(),
                         "barrera": barrera_txt,
-                        "barrera_otra": (
-                            barrera_otra.strip()
-                            if "Otra" in barreras_sel
-                            else ""
-                        ),
+                        "barrera_otra": barrera_otra.strip(),
                         "ejemplo": ejemplo.strip(),
                         "actor": actor_txt,
-                        "actor_otro": (
-                            actor_otro.strip()
-                            if "Otro" in actores_sel
-                            else ""
-                        ),
+                        "actor_otro": actor_otro.strip(),
                         "apoyo_solucion": apoyo.strip(),
                         "sectorialidad": sectorialidad,
                         "prioridad": prioridad,
@@ -1268,11 +1312,19 @@ with tab_captura:
                     ok, msg = save_record(rec)
 
                     if ok:
-                        _msg_guardado = st.success(
-                            "Hallazgo guardado correctamente."
-                        )
+                        st.session_state["hallazgo_guardado"] = True
                     else:
                         _msg_error = st.error(msg)
+
+        if st.session_state.get("hallazgo_guardado"):
+            st.success("Hallazgo guardado correctamente.")
+            st.button(
+                "+ Registrar nuevo hallazgo",
+                type="primary",
+                use_container_width=True,
+                on_click=nuevo_hallazgo,
+                key="btn_nuevo_hallazgo",
+            )
 
     if grupo != "Líderes gremiales":
         st.markdown(
@@ -1337,7 +1389,9 @@ with tab_hallazgos:
         filtro_mesa = st.selectbox(
             "Filtrar por mesa",
             ["Todas"] + MESAS,
-            key="f_mesa"
+            key="f_mesa",
+            on_change=sync_mesa_from_hallazgos,
+            help="Al elegir una mesa, esa selección se conserva en Resumen de mesa.",
         )
 
     with f2:
@@ -1490,13 +1544,22 @@ with tab_hallazgos:
 with tab_resumen:
     df = load_data()
 
+    st.markdown("## Resumen de mesa")
+    mesa_resumen = st.selectbox(
+        "Mesa a consultar",
+        MESAS,
+        key="mesa_resumen",
+        help="Puedes elegir directamente una mesa. Si la filtraste antes en Hallazgos, se conserva esa selección.",
+    )
+    st.caption(f"Mostrando únicamente los hallazgos de: {mesa_resumen}")
+
     mesa_df = (
-        df[df["mesa"] == mesa].copy()
+        df[df["mesa"] == mesa_resumen].copy()
         if not df.empty and "mesa" in df.columns
         else pd.DataFrame()
     )
 
-    st.markdown(f"## Resumen · {mesa}")
+    st.markdown(f"### {mesa_resumen}")
 
     r1, r2, r3, r4 = st.columns(4)
 
