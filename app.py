@@ -104,9 +104,35 @@ st.markdown(
         pointer-events: none;
         z-index: 0;
     }}
+    [data-testid="stSidebar"] {{
+        min-width: 410px !important;
+        width: 410px !important;
+    }}
     [data-testid="stSidebar"] > div {{
         position: relative;
         z-index: 1;
+        width: 410px !important;
+    }}
+
+    /* Selectores largos: mostrar el texto completo, sin cortarlo con puntos suspensivos */
+    [data-baseweb="select"] > div {{
+        min-height: 42px !important;
+        height: auto !important;
+    }}
+    [data-baseweb="select"] [data-testid="stMarkdownContainer"],
+    [data-baseweb="select"] span,
+    div[role="option"] {{
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        line-height: 1.25 !important;
+    }}
+    div[role="option"] {{
+        min-height: 42px !important;
+        height: auto !important;
+        align-items: flex-start !important;
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
     }}
     [data-testid="stSidebar"] h2 {{
         color: {INK};
