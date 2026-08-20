@@ -804,6 +804,29 @@ def delete_record(record_id):
     return False
 
 
+def delete_all_records():
+    """Borra todos los hallazgos registrados, tanto en Supabase como en modo local."""
+    if supabase:
+        try:
+            # Supabase exige un filtro para operaciones DELETE.
+            # Los IDs de esta tabla son enteros positivos, por lo que este filtro
+            # abarca todos los registros creados por la aplicación.
+            supabase.table("relatoria_hallazgos").delete().gte("id", 0).execute()
+            return True
+        except Exception as e:
+            st.error(f"No se pudieron borrar todos los hallazgos: {e}")
+            return False
+
+    try:
+        df = load_data()
+        empty = df.iloc[0:0].copy()
+        empty.to_csv(LOCAL_CSV, index=False)
+        return True
+    except Exception as e:
+        st.error(f"No se pudieron borrar todos los hallazgos: {e}")
+        return False
+
+
 def to_excel_bytes(df):
     out = io.BytesIO()
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
@@ -2313,6 +2336,29 @@ with tab_hallazgos:
                     _msg_borrado = st.success(
                         "Registro borrado."
                     )
+                    st.rerun()
+
+    with st.expander("Borrar todos los hallazgos"):
+        total_registros = len(load_data())
+        if total_registros == 0:
+            st.caption("No hay hallazgos para borrar.")
+        else:
+            st.warning(
+                f"Esta acción borrará permanentemente los {total_registros} "
+                "hallazgos registrados en la base de datos."
+            )
+            confirmar_borrado_total = st.checkbox(
+                "Entiendo que se borrarán todos los hallazgos",
+                key="confirmar_borrado_total",
+            )
+            if st.button(
+                "Borrar todos los hallazgos",
+                disabled=not confirmar_borrado_total,
+                use_container_width=True,
+                key="btn_borrar_todos",
+            ):
+                if delete_all_records():
+                    st.success("Todos los hallazgos fueron borrados.")
                     st.rerun()
 
 
