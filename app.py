@@ -985,17 +985,26 @@ def _unique_texts(df, columns, limit=5, max_chars=220):
 
 
 def _compact_phrase(text, limit=145):
-    """Convierte un registro largo en una idea breve, sin perder el sentido central."""
+    """Devuelve una idea completa. Nunca corta con puntos suspensivos."""
     text = _clean_text(text)
     if not text:
         return ""
-    # Prioriza la primera oración/idea completa.
-    first = re.split(r"(?<=[.!?])\s+", text)[0].strip()
-    if len(first) <= limit:
-        return first.rstrip(".;")
-    # Si sigue siendo largo, corta en una frontera de palabra.
-    cut = first[:limit].rsplit(" ", 1)[0].rstrip(" ,;:-")
-    return cut + "…"
+    text = " ".join(text.split()).strip()
+
+    # Prioriza la primera oración completa. Si el registro no tiene puntuación,
+    # conserva la idea completa en vez de dejarla truncada.
+    parts = re.split(r"(?<=[.!?])\s+", text)
+    first = parts[0].strip() if parts else text
+
+    # Cuando la primera oración es excepcionalmente larga, un punto y coma suele
+    # separar dos ideas autosuficientes. Sólo se usa si la primera cláusula ya
+    # expresa una proposición completa y razonablemente informativa.
+    if len(first) > max(limit, 260) and ";" in first:
+        clause = first.split(";", 1)[0].strip()
+        if len(clause) >= 80:
+            first = clause
+
+    return first.rstrip(".;")
 
 
 def _sector_views(df):
@@ -1008,11 +1017,11 @@ def _sector_views(df):
         gd = df[df["grupo"].astype(str) == group]
         items = []
 
-        hall = _unique_texts(gd, ["hallazgo", "tipo_hallazgo_gremial"], limit=1, max_chars=500)
+        hall = _unique_texts(gd, ["hallazgo", "tipo_hallazgo_gremial"], limit=1, max_chars=5000)
         if hall:
             items.append("Hallazgo: " + _compact_phrase(hall[0], 145) + ".")
 
-        ex = _unique_texts(gd, ["ejemplo", "afectacion_gremial"], limit=1, max_chars=500)
+        ex = _unique_texts(gd, ["ejemplo", "afectacion_gremial"], limit=1, max_chars=5000)
         if ex:
             items.append("Ejemplo: " + _compact_phrase(ex[0], 145) + ".")
 
@@ -1020,7 +1029,7 @@ def _sector_views(df):
         if barriers:
             items.append("Barreras: " + _join_items([x[0] for x in barriers]) + ".")
 
-        supports = _unique_texts(gd, ["apoyo_solucion", "instrumento_gremial"], limit=1, max_chars=500)
+        supports = _unique_texts(gd, ["apoyo_solucion", "instrumento_gremial"], limit=1, max_chars=5000)
         if supports:
             items.append("Propuesta: " + _compact_phrase(supports[0], 145) + ".")
 
@@ -1056,7 +1065,7 @@ def _sector_differences(df):
         if unique:
             out.append(f"{group}: mayor énfasis en {unique[0]['tema'].lower()}.")
         else:
-            examples = _unique_texts(gd, ["hallazgo", "ejemplo", "tipo_hallazgo_gremial"], limit=1, max_chars=500)
+            examples = _unique_texts(gd, ["hallazgo", "ejemplo", "tipo_hallazgo_gremial"], limit=1, max_chars=5000)
             if examples:
                 out.append(f"{group}: {_compact_phrase(examples[0], 120)}.")
         if len(out) >= 4:
@@ -1101,7 +1110,7 @@ def _executive_bullets(df, themes, barriers, supports, sector_views):
         return bullets
 
     def first_value(gd, cols):
-        vals = _unique_texts(gd, cols, limit=1, max_chars=700)
+        vals = _unique_texts(gd, cols, limit=1, max_chars=5000)
         return vals[0] if vals else ""
 
     def sector_label(group):
@@ -1129,13 +1138,9 @@ def _executive_bullets(df, themes, barriers, supports, sector_views):
             if not core:
                 continue
 
-            # El hallazgo da el contexto principal; el ejemplo sólo se añade si aporta algo distinto.
-            text = _compact_phrase(core, 175)
-            if hall and ex:
-                ex_short = _compact_phrase(ex, 95)
-                if ex_short and ex_short.lower() not in text.lower():
-                    text = text.rstrip(".;") + f"; por ejemplo, {ex_short[0].lower() + ex_short[1:]}"
-
+            # Para la lectura ejecutiva usamos una sola idea completa por sector.
+            # El ejemplo se reserva para la sección sectorial para evitar bullets kilométricos.
+            text = _compact_phrase(core, 220)
             bullets.append(f"{sector_label(group)}, {text.rstrip('.')}.")
             if len(bullets) >= 3:
                 break
@@ -1151,7 +1156,7 @@ def _executive_bullets(df, themes, barriers, supports, sector_views):
             )
 
     # 3) Cerrar con la salida concreta propuesta en la mesa.
-    opp = _unique_texts(df, ["apoyo_solucion", "instrumento_gremial"], limit=2, max_chars=700)
+    opp = _unique_texts(df, ["apoyo_solucion", "instrumento_gremial"], limit=2, max_chars=5000)
     if opp:
         compact = [_compact_phrase(x, 115) for x in opp if _compact_phrase(x, 115)]
         if compact:
@@ -2386,7 +2391,7 @@ with tab_resumen:
             st.session_state[pri_key] = "\n".join(f"• {x}" for x in analysis["priorities"])
 
         st.markdown(f"### Mesa: {scope_label}")
-        st.caption("Motor de síntesis contextual · v6.1")
+        st.caption("Motor de síntesis contextual · v6.2 · ideas completas")
         st.markdown("#### Lectura ejecutiva")
         for item in analysis["executive_bullets"]:
             st.markdown(f"- {item}")
