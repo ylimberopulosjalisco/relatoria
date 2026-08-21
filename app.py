@@ -984,26 +984,48 @@ def _unique_texts(df, columns, limit=5, max_chars=220):
     return out
 
 
+def _compact_phrase(text, limit=145):
+    """Convierte un registro largo en una idea breve, sin perder el sentido central."""
+    text = _clean_text(text)
+    if not text:
+        return ""
+    # Prioriza la primera oración/idea completa.
+    first = re.split(r"(?<=[.!?])\s+", text)[0].strip()
+    if len(first) <= limit:
+        return first.rstrip(".;")
+    # Si sigue siendo largo, corta en una frontera de palabra.
+    cut = first[:limit].rsplit(" ", 1)[0].rstrip(" ,;:-")
+    return cut + "…"
+
+
 def _sector_views(df):
+    """Salida deliberadamente compacta: máximo 4 bullets cortos por sector."""
     views = []
     if df.empty or "grupo" not in df.columns:
         return views
     groups = [g for g in df["grupo"].dropna().astype(str).unique().tolist() if g.strip()]
     for group in groups:
         gd = df[df["grupo"].astype(str) == group]
-        bullets = _unique_texts(
-            gd,
-            ["hallazgo", "tipo_hallazgo_gremial", "ejemplo", "instrumento_gremial"],
-            limit=4,
-            max_chars=235,
-        )
-        barriers = _top_values(gd, "barrera", 2)
-        supports = _top_values(gd, "apoyo_solucion", 2)
+        items = []
+
+        hall = _unique_texts(gd, ["hallazgo", "tipo_hallazgo_gremial"], limit=1, max_chars=500)
+        if hall:
+            items.append("Hallazgo: " + _compact_phrase(hall[0], 145) + ".")
+
+        ex = _unique_texts(gd, ["ejemplo", "afectacion_gremial"], limit=1, max_chars=500)
+        if ex:
+            items.append("Ejemplo: " + _compact_phrase(ex[0], 145) + ".")
+
+        barriers = _top_values(gd, "barrera", 3)
         if barriers:
-            bullets.append("Barreras señaladas: " + _join_items([x[0] for x in barriers]) + ".")
+            items.append("Barreras: " + _join_items([x[0] for x in barriers]) + ".")
+
+        supports = _unique_texts(gd, ["apoyo_solucion", "instrumento_gremial"], limit=1, max_chars=500)
         if supports:
-            bullets.append("Vías de avance mencionadas: " + _join_items([x[0] for x in supports]) + ".")
-        views.append((group, bullets[:6]))
+            items.append("Propuesta: " + _compact_phrase(supports[0], 145) + ".")
+
+        if items:
+            views.append((group, items[:4]))
     return views
 
 
@@ -1014,11 +1036,8 @@ def _cross_sector_coincidences(df, themes):
     group_total = int(df["grupo"].dropna().astype(str).nunique()) if "grupo" in df.columns else 0
     for t in themes:
         if t["grupos"] >= 2:
-            out.append(
-                f"{t['tema']}: aparece en {t['grupos']} sectores/grupos"
-                + (f" de {group_total}" if group_total else "") + "."
-            )
-        if len(out) >= 5:
+            out.append(f"{t['tema']}: {t['grupos']} de {group_total} sectores/grupos." if group_total else f"{t['tema']}: {t['grupos']} sectores/grupos.")
+        if len(out) >= 4:
             break
     return out
 
@@ -1035,55 +1054,111 @@ def _sector_differences(df):
         othemes = {x["tema"] for x in _theme_stats(others)}
         unique = [x for x in gthemes if x["tema"] not in othemes]
         if unique:
-            out.append(f"{group}: pone un énfasis particular en {unique[0]['tema'].lower()}.")
+            out.append(f"{group}: mayor énfasis en {unique[0]['tema'].lower()}.")
         else:
-            examples = _unique_texts(gd, ["hallazgo", "ejemplo", "tipo_hallazgo_gremial"], limit=1, max_chars=180)
+            examples = _unique_texts(gd, ["hallazgo", "ejemplo", "tipo_hallazgo_gremial"], limit=1, max_chars=500)
             if examples:
-                out.append(f"{group}: {examples[0]}")
-        if len(out) >= 5:
+                out.append(f"{group}: {_compact_phrase(examples[0], 120)}.")
+        if len(out) >= 4:
             break
     return out
 
 
 def _opportunities(df):
-    vals = _unique_texts(
-        df,
-        ["apoyo_solucion", "instrumento_gremial", "actor_otro", "notas"],
-        limit=7,
-        max_chars=240,
-    )
-    return vals
+    vals = _unique_texts(df, ["apoyo_solucion", "instrumento_gremial"], limit=5, max_chars=500)
+    return [_compact_phrase(v, 155) + "." for v in vals if _compact_phrase(v, 155)]
 
 
 def _implications(themes, barriers, supports):
+    # Acciones muy breves; evitar párrafos disfrazados de bullet.
+    short_actions = {
+        "Financiamiento e inversión": "Diseñar coinversión, crédito o garantías para primeras implementaciones.",
+        "Capacidades y conocimiento": "Fortalecer asistencia técnica y capacidades de implementación.",
+        "Regulación y trámites": "Aclarar permisos, criterios y rutas de cumplimiento.",
+        "Coordinación y colaboración": "Articular empresas, gobierno, academia y organismos empresariales.",
+        "Tecnología e innovación": "Impulsar pilotos y validación tecnológica con evidencia.",
+        "Mercado y demanda": "Fortalecer demanda y viabilidad comercial de soluciones circulares.",
+        "Proveedores y cadena de valor": "Conectar proveedores y clientes para cerrar ciclos.",
+        "Información y medición": "Generar datos y métricas para sustentar decisiones.",
+        "Infraestructura": "Evaluar infraestructura compartida para soluciones de escala.",
+        "Materiales y residuos": "Priorizar flujos con potencial de valorización.",
+        "Agua y energía": "Priorizar proyectos medibles de eficiencia y circularidad.",
+    }
     out = []
     for t in themes[:4]:
-        action = ACTION_BY_THEME.get(t["tema"])
+        action = short_actions.get(t["tema"])
         if action:
-            out.append(f"{t['tema']}: {action}.")
+            out.append(f"{t['tema']}: {action}")
     if not out and supports:
-        out = [f"Profundizar en {x[0].lower()} como posible línea de intervención." for x in supports[:4]]
-    if barriers and len(out) < 5:
-        out.append("Diseñar el seguimiento priorizando las barreras con mayor recurrencia: " + _join_items([x[0].lower() for x in barriers[:3]]) + ".")
-    return out[:5]
+        out = [f"Explorar {x[0].lower()}." for x in supports[:4]]
+    return out[:4]
 
 
 def _executive_bullets(df, themes, barriers, supports, sector_views):
+    """Lectura ejecutiva contextual: resume qué está pasando y por qué importa, sin contar menciones."""
     bullets = []
-    if themes:
-        top = themes[:3]
-        for t in top:
-            reach = f"{t['grupos']} sector{'es' if t['grupos'] != 1 else ''}"
-            bullets.append(f"{t['tema']}: concentra {t['menciones']} menciones y aparece en {reach}.")
-    if barriers:
-        bullets.append("Las principales fricciones se concentran en " + _join_items([x[0].lower() for x in barriers[:3]]) + ".")
-    opp = _unique_texts(df, ["apoyo_solucion", "instrumento_gremial"], limit=1, max_chars=230)
-    if opp:
-        bullets.append("Una vía de avance planteada de forma concreta es: " + opp[0])
-    if sector_views and len(sector_views) > 1:
-        bullets.append(f"La mesa recoge perspectivas diferenciadas de {len(sector_views)} sectores/grupos; el análisis separa sus posiciones para evitar presentar un consenso artificial.")
-    return bullets[:6]
+    if df.empty:
+        return bullets
 
+    def first_value(gd, cols):
+        vals = _unique_texts(gd, cols, limit=1, max_chars=700)
+        return vals[0] if vals else ""
+
+    def sector_label(group):
+        g = str(group).strip()
+        low = g.lower()
+        if "grem" in low:
+            return "Desde los líderes gremiales"
+        if "prim" in low:
+            return "En el sector primario"
+        if "secund" in low or "industr" in low:
+            return "En el sector secundario"
+        if "terci" in low or "serv" in low:
+            return "En el sector terciario"
+        return f"En {g}"
+
+    # 1) Construir 2–3 bullets con contenido concreto de los sectores presentes.
+    if "grupo" in df.columns:
+        groups = [g for g in df["grupo"].dropna().astype(str).unique().tolist() if g.strip()]
+        for group in groups[:3]:
+            gd = df[df["grupo"].astype(str) == group]
+            hall = first_value(gd, ["hallazgo", "tipo_hallazgo_gremial"])
+            ex = first_value(gd, ["ejemplo", "afectacion_gremial"])
+
+            core = hall or ex
+            if not core:
+                continue
+
+            # El hallazgo da el contexto principal; el ejemplo sólo se añade si aporta algo distinto.
+            text = _compact_phrase(core, 175)
+            if hall and ex:
+                ex_short = _compact_phrase(ex, 95)
+                if ex_short and ex_short.lower() not in text.lower():
+                    text = text.rstrip(".;") + f"; por ejemplo, {ex_short[0].lower() + ex_short[1:]}"
+
+            bullets.append(f"{sector_label(group)}, {text.rstrip('.')}.")
+            if len(bullets) >= 3:
+                break
+
+    # 2) Sintetizar la barrera transversal en lenguaje explicativo, no estadístico.
+    if barriers:
+        names = [x[0] for x in barriers[:3] if x[0] and str(x[0]).strip().lower() not in {"otro", "otra"}]
+        if names:
+            bullets.append(
+                "De manera transversal, las principales fricciones son "
+                + _join_items([n.lower() for n in names])
+                + "; esto limita que las oportunidades identificadas pasen de casos aislados a soluciones replicables."
+            )
+
+    # 3) Cerrar con la salida concreta propuesta en la mesa.
+    opp = _unique_texts(df, ["apoyo_solucion", "instrumento_gremial"], limit=2, max_chars=700)
+    if opp:
+        compact = [_compact_phrase(x, 115) for x in opp if _compact_phrase(x, 115)]
+        if compact:
+            bullets.append("La mesa apunta a una ruta de acción concreta: " + _join_items(compact) + ".")
+
+    # Evitar más de cinco bullets y mantenerlos realmente escaneables.
+    return bullets[:5]
 
 def analizar_sesion(df, scope_label="Sesión completa"):
     data = df.copy()
@@ -1307,7 +1382,7 @@ def generar_docx_sintesis(analysis, executive_text, priorities_text, chart_theme
         if chart_barrier: doc.add_picture(io.BytesIO(chart_barrier), width=Inches(6.7))
 
     doc.add_heading("Nota metodológica", level=1)
-    doc.add_paragraph("Esta síntesis interpreta y agrupa los registros capturados por mesa y sector. No atribuye comentarios a personas individuales. Las coincidencias y diferencias se construyen a partir de los registros disponibles; las frecuencias representan menciones y no proporciones de participantes.")
+    doc.add_paragraph("Síntesis por mesa y sector. Sin atribuciones individuales. Las frecuencias indican menciones, no proporciones de participantes.")
 
     footer = sec.footer
     fp = footer.paragraphs[0]; fp.text = "COINVIERTE · Diagnóstico de Economía Circular Jalisco"
@@ -1417,7 +1492,7 @@ def generar_pdf_sintesis(analysis, executive_text, priorities_text, chart_theme=
         if chart_barrier:
             story += [RLImage(io.BytesIO(chart_barrier), width=175*mm, height=70*mm, kind="proportional"), Spacer(1, 4*mm)]
 
-    story += [Paragraph("Nota metodológica", h1), Paragraph("Esta síntesis interpreta y agrupa los registros capturados por mesa y sector. No atribuye comentarios a personas individuales. Las coincidencias y diferencias se construyen a partir de los registros disponibles; las frecuencias representan menciones y no proporciones de participantes.", body)]
+    story += [Paragraph("Nota metodológica", h1), Paragraph("Síntesis por mesa y sector. Sin atribuciones individuales. Las frecuencias indican menciones, no proporciones de participantes.", body)]
     doc.build(story, canvasmaker=_NumberedCanvas)
     return out.getvalue()
 
@@ -1668,7 +1743,7 @@ with tab_captura:
             respuesta_cierre = st.text_area(
                 "Respuesta / síntesis de cierre *",
                 placeholder="Captura aquí la conclusión principal del grupo para esta pregunta de cierre.",
-                height=150,
+                height=120,
             )
 
             guardar_cierre = st.form_submit_button(
@@ -2303,14 +2378,15 @@ with tab_resumen:
         m4.metric("Hallazgos sectoriales", analysis["sectorial"])
 
         signature = _scope_signature(synth_df, scope_label)
-        exec_key = f"sintesis_exec_{signature}"
-        pri_key = f"sintesis_pri_{signature}"
+        exec_key = f"sintesis_exec_v5_{signature}"
+        pri_key = f"sintesis_pri_v5_{signature}"
         if exec_key not in st.session_state:
             st.session_state[exec_key] = analysis["executive"]
         if pri_key not in st.session_state:
             st.session_state[pri_key] = "\n".join(f"• {x}" for x in analysis["priorities"])
 
         st.markdown(f"### Mesa: {scope_label}")
+        st.caption("Motor de síntesis contextual · v6.1")
         st.markdown("#### Lectura ejecutiva")
         for item in analysis["executive_bullets"]:
             st.markdown(f"- {item}")
@@ -2378,7 +2454,7 @@ with tab_resumen:
         executive_edit = st.text_area(
             "Síntesis ejecutiva",
             key=exec_key,
-            height=170,
+            height=120,
         )
         priorities_edit = st.text_area(
             "Conclusiones / prioridades",
